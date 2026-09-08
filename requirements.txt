@@ -1,0 +1,9 @@
+opencv-python>=4.8.0
+numpy>=1.24.0
+onnxruntime-gpu>=1.15.0
+shapely>=2.0.0
+scipy>=1.10.0
+filterpy>=1.4.5
+lapx>=0.5.5
+fastapi>=0.100.0
+uvicorn>=0.23.0
