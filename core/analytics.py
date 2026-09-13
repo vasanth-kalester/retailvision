@@ -147,8 +147,34 @@ class HeatmapGenerator:
     def get_heatmap_image(self) -> np.ndarray:
         blurred = gaussian_filter(self.density_matrix, sigma=HEATMAP_GAUSSIAN_SIGMA)
         max_val = np.max(blurred)
-        normalized = (blurred / max_val * 255.0) if max_val > 0 else blurred
         return cv2.applyColorMap(np.clip(normalized, 0, 255).astype(np.uint8), cv2.COLORMAP_JET)
+
+class SecurityEngine:
+    """Detects suspicious behavior (loitering) based on global dwell time."""
+    def __init__(self, loiter_threshold_sec: float = 45.0):
+        self.track_start_times = {}
+        self.loiter_threshold_sec = loiter_threshold_sec
+
+    def update(self, tracks):
+        now = time.time()
+        active_ids = set()
+
+        for track in tracks:
+            t_id = track['track_id']
+            active_ids.add(t_id)
+
+            if t_id not in self.track_start_times:
+                self.track_start_times[t_id] = now
+            else:
+                duration = now - self.track_start_times[t_id]
+                if duration > self.loiter_threshold_sec:
+                    # Emit alert to DB (this is picked up by security_routes)
+                    db.log_security_alert(t_id, duration)
+
+        # Cleanup lost tracks
+        for t_id in list(self.track_start_times.keys()):
+            if t_id not in active_ids:
+                del self.track_start_times[t_id]
 
 class AnalyticsOrchestrator:
     def __init__(self):
@@ -156,12 +182,14 @@ class AnalyticsOrchestrator:
         self.trend = TrendAggregator()
         self.dwell = DwellTimeEngine()
         self.heatmap = HeatmapGenerator()
+        self.security = SecurityEngine()
 
     def process(self, tracks):
         self.footfall.update(tracks)
         self.trend.update(tracks)
         self.dwell.update(tracks)
         self.heatmap.update(tracks)
+        self.security.update(tracks)
 
     def get_heatmap(self):
         return self.heatmap.get_heatmap_image()

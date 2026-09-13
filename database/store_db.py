@@ -1,12 +1,120 @@
-import sqlite3
 import threading
 import queue
 import time
 import os
+import sqlite3
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+from core.config import DB_TYPE
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shopper_analytics.db")
 
-class StoreDatabase:
+class MongoStoreDatabase:
+    def __init__(self, uri="mongodb://localhost:27017/", db_name="shopper_analytics"):
+        self.uri = uri
+        self.db_name = db_name
+        self.client = MongoClient(self.uri)
+        self.db = self.client[self.db_name]
+        
+        # Initialize collections
+        self.footfall = self.db["footfall"]
+        self.zone_metrics = self.db["zone_metrics"]
+        self.dwell_times = self.db["dwell_times"]
+
+        self.write_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self.worker_thread.start()
+
+    def _worker(self):
+        while True:
+            task = self.write_queue.get()
+            if task is None:
+                break
+            collection_name, document = task
+            try:
+                self.db[collection_name].insert_one(document)
+            except PyMongoError as e:
+                print(f"[Mongo DB Error] {e}")
+            finally:
+                self.write_queue.task_done()
+
+    def log_footfall(self, track_id: int, direction: str):
+        document = {
+            "timestamp": time.time(),
+            "track_id": track_id,
+            "direction": direction
+        }
+        self.write_queue.put(("footfall", document))
+
+    def log_zone_metrics(self, zone_name: str, count: int):
+        document = {
+            "timestamp": time.time(),
+            "zone_name": zone_name,
+            "occupancy_count": count
+        }
+        self.write_queue.put(("zone_metrics", document))
+
+    def log_dwell_time(self, track_id: int, promo_zone: str, entry_time: float, exit_time: float, duration: float):
+        document = {
+            "track_id": track_id,
+            "promo_zone": promo_zone,
+            "entry_time": entry_time,
+            "exit_time": exit_time,
+            "dwell_duration": duration
+        }
+        self.write_queue.put(("dwell_times", document))
+
+    def log_security_alert(self, track_id: int, duration: float):
+        document = {
+            "timestamp": time.time(),
+            "track_id": track_id,
+            "duration": duration,
+            "alert_type": "loitering"
+        }
+        self.write_queue.put(("security_alerts", document))
+
+    def shutdown(self):
+        self.write_queue.put(None)
+        self.worker_thread.join()
+
+    def generate_insights(self) -> list:
+        insights = []
+        try:
+            pipeline = [{"$match": {"direction": "ENTRY"}}, {"$count": "count"}]
+            result = list(self.footfall.aggregate(pipeline))
+            total_entries = result[0]["count"] if result else 0
+            
+            if total_entries > 0:
+                insights.append(f"Store has seen {total_entries} total entries. Ensure adequate staffing at checkout counters.")
+            
+            dwell_pipeline = [
+                {
+                    "$group": {
+                        "_id": "$promo_zone",
+                        "avg_duration": {"$avg": "$dwell_duration"},
+                        "visitor_count": {"$sum": 1}
+                    }
+                }
+            ]
+            dwell_data = list(self.dwell_times.aggregate(dwell_pipeline))
+            
+            for row in dwell_data:
+                zone = row['_id']
+                avg_dur = row['avg_duration']
+                visitors = row['visitor_count']
+                
+                if visitors < (total_entries * 0.1):
+                    insights.append(f"[Alert] {zone}: Very low engagement ({visitors} visitors). Consider relocating this display to a higher-traffic area.")
+                elif avg_dur < 10.0:
+                    insights.append(f"[Warning] {zone}: High traffic but low average dwell time ({avg_dur:.1f}s). The promotion may not be compelling enough to hold shopper attention.")
+                else:
+                    insights.append(f"[Positive] {zone}: Strong performance. High engagement and healthy dwell time ({avg_dur:.1f}s). Replicate this setup in other zones.")
+        except Exception as e:
+            insights.append(f"Could not generate insights due to error: {e}")
+        return insights
+
+
+class SQLiteStoreDatabase:
     def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
         self.write_queue = queue.Queue()
@@ -43,6 +151,15 @@ class StoreDatabase:
                     dwell_duration REAL
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS security_alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL,
+                    track_id INTEGER,
+                    duration REAL,
+                    alert_type TEXT
+                )
+            """)
             conn.commit()
 
     def _worker(self):
@@ -57,7 +174,7 @@ class StoreDatabase:
                     cursor.execute(query, args)
                     conn.commit()
                 except sqlite3.Error as e:
-                    print(f"[DB Error] {e}")
+                    print(f"[SQLite DB Error] {e}")
                 finally:
                     self.write_queue.task_done()
 
@@ -73,21 +190,21 @@ class StoreDatabase:
         query = "INSERT INTO dwell_times (track_id, promo_zone, entry_time, exit_time, dwell_duration) VALUES (?, ?, ?, ?, ?)"
         self.write_queue.put((query, (track_id, promo_zone, entry_time, exit_time, duration)))
 
+    def log_security_alert(self, track_id: int, duration: float):
+        query = "INSERT INTO security_alerts (timestamp, track_id, duration, alert_type) VALUES (?, ?, ?, ?)"
+        self.write_queue.put((query, (time.time(), track_id, duration, "loitering")))
+
     def shutdown(self):
         self.write_queue.put(None)
         self.worker_thread.join()
 
     def generate_insights(self) -> list:
-        """
-        Analyzes dwell times versus footfall ratios to output plain-language operational recommendations.
-        """
         insights = []
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # 1. Total Footfall Assessment
                 cursor.execute("SELECT direction, COUNT(*) as count FROM footfall GROUP BY direction")
                 footfall_data = cursor.fetchall()
                 total_entries = sum(row['count'] for row in footfall_data if row['direction'] == 'ENTRY')
@@ -95,7 +212,6 @@ class StoreDatabase:
                 if total_entries > 0:
                     insights.append(f"Store has seen {total_entries} total entries. Ensure adequate staffing at checkout counters.")
                 
-                # 2. Dwell Time Analysis per Promotional Zone
                 cursor.execute("""
                     SELECT promo_zone, AVG(dwell_duration) as avg_duration, COUNT(*) as visitor_count
                     FROM dwell_times
@@ -108,17 +224,21 @@ class StoreDatabase:
                     avg_dur = row['avg_duration']
                     visitors = row['visitor_count']
                     
-                    if visitors < (total_entries * 0.1): # Less than 10% of total visitors engaged
+                    if visitors < (total_entries * 0.1):
                         insights.append(f"[Alert] {zone}: Very low engagement ({visitors} visitors). Consider relocating this display to a higher-traffic area.")
                     elif avg_dur < 10.0:
                         insights.append(f"[Warning] {zone}: High traffic but low average dwell time ({avg_dur:.1f}s). The promotion may not be compelling enough to hold shopper attention.")
                     else:
                         insights.append(f"[Positive] {zone}: Strong performance. High engagement and healthy dwell time ({avg_dur:.1f}s). Replicate this setup in other zones.")
-                        
         except Exception as e:
             insights.append(f"Could not generate insights due to error: {e}")
             
         return insights
 
-# Global Instance
-db = StoreDatabase()
+# Global Instance based on DB_TYPE
+if DB_TYPE == "sqlite":
+    print("[Database] Using SQLite Backend")
+    db = SQLiteStoreDatabase()
+else:
+    print("[Database] Using MongoDB Backend")
+    db = MongoStoreDatabase()

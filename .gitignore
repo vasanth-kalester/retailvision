@@ -1,0 +1,44 @@
+# Virtual Environments
+venv/
+env/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+
+# Flutter / Mobile
+mobile/.dart_tool/
+mobile/.packages
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Models / Large Files
+*.pt
+*.onnx
+*.weights
+*.mp4
+*.avi
+*.webm
+
+# IDE / OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

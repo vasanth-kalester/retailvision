@@ -5,7 +5,7 @@ import threading
 import time
 from typing import List, Dict, Any
 
-from .config import GSTREAMER_PIPELINE, RTSP_URL
+from .config import GSTREAMER_PIPELINE, RTSP_URL, PRODUCT_CLASSES
 
 class VideoStreamBuffer:
     def __init__(self, use_gstreamer=False):
@@ -20,17 +20,16 @@ class VideoStreamBuffer:
         self.capture_thread.start()
 
     def _update(self):
-        source = GSTREAMER_PIPELINE if self.use_gstreamer else RTSP_URL
-        if isinstance(source, str) and source.isdigit():
-            source = int(source)
-            api_pref = cv2.CAP_ANY
+        # Choose appropriate backend: CAP_DSHOW works best for USB cameras on Windows
+        if isinstance(source, int):
+            api_pref = cv2.CAP_DSHOW
         else:
             api_pref = cv2.CAP_GSTREAMER if self.use_gstreamer else cv2.CAP_FFMPEG
-            
         cap = cv2.VideoCapture(source, api_pref)
         if not cap.isOpened():
             print(f"[Error] Could not open video stream: {source}")
-            cap = cv2.VideoCapture(0)
+            self.running = False
+            return
             
         while self.running:
             ret, frame = cap.read()
@@ -52,20 +51,22 @@ class VideoStreamBuffer:
 
 class TrackState:
     _id_count = 0
-    def __init__(self, bbox, score):
+    def __init__(self, bbox, score, class_id):
         # State space mock for ByteTrack (simplified for live MVP without heavy filterpy dependency)
         TrackState._id_count += 1
         self.track_id = TrackState._id_count
         self.score = score
+        self.class_id = class_id
         self.time_since_update = 0
         self.bbox = bbox
 
     def predict(self):
         self.time_since_update += 1
 
-    def update(self, bbox, score):
+    def update(self, bbox, score, class_id):
         self.time_since_update = 0
         self.score = score
+        self.class_id = class_id
         self.bbox = bbox
 
 class Tracker:
@@ -83,30 +84,32 @@ class Tracker:
         if self.model is None:
             return []
             
-        results = self.model(frame, classes=[0], verbose=False)
+        results = self.model(frame, classes=[0] + PRODUCT_CLASSES, verbose=False)
         detections = []
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 score = box.conf[0].cpu().item()
-                detections.append([x1, y1, x2, y2, score, 0])
+                class_id = int(box.cls[0].cpu().item())
+                detections.append([x1, y1, x2, y2, score, class_id])
                 
         # Basic matching logic (simplified ByteTrack association)
         # In a real edge scenario, we use full IoU matrix. For this refactor MVP:
         active_tracks = []
         for det in detections:
             bbox = det[:4]
+            class_id = det[5]
             # Find closest track based on centroid distance (rough association)
             cx, cy = (bbox[0]+bbox[2])/2, (bbox[1]+bbox[3])/2
             matched = False
             for t in self.tracks:
                 tcx, tcy = (t.bbox[0]+t.bbox[2])/2, (t.bbox[1]+t.bbox[3])/2
-                if abs(cx - tcx) < 100 and abs(cy - tcy) < 100 and t.time_since_update < 5:
-                    t.update(bbox, det[4])
+                if abs(cx - tcx) < 100 and abs(cy - tcy) < 100 and t.time_since_update < 5 and t.class_id == class_id:
+                    t.update(bbox, det[4], class_id)
                     matched = True
                     break
             if not matched:
-                new_t = TrackState(bbox, det[4])
+                new_t = TrackState(bbox, det[4], class_id)
                 self.tracks.append(new_t)
 
         for t in self.tracks:
@@ -120,6 +123,7 @@ class Tracker:
                     'track_id': t.track_id,
                     'bbox': t.bbox,
                     'score': t.score,
+                    'class_id': t.class_id,
                     'centroid': ((t.bbox[0] + t.bbox[2])/2, (t.bbox[1] + t.bbox[3])/2)
                 })
         return active_tracks
