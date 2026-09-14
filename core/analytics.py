@@ -147,6 +147,7 @@ class HeatmapGenerator:
     def get_heatmap_image(self) -> np.ndarray:
         blurred = gaussian_filter(self.density_matrix, sigma=HEATMAP_GAUSSIAN_SIGMA)
         max_val = np.max(blurred)
+        normalized = (blurred / max(max_val, 1e-5)) * 255.0
         return cv2.applyColorMap(np.clip(normalized, 0, 255).astype(np.uint8), cv2.COLORMAP_JET)
 
 class SecurityEngine:

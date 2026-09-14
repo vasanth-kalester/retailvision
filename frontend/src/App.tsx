@@ -5,7 +5,10 @@ import QueueIntelligence from './components/QueueIntelligence';
 import ShelfMonitoring from './components/ShelfMonitoring';
 import PosInventory from './components/PosInventory';
 import CopilotPanel from './components/CopilotPanel';
-import TestPage from './TestPage';
+import CameraManagement from './components/CameraManagement';
+import AlertsPanel from './components/AlertsPanel';
+import ReportsPage from './components/ReportsPage';
+import ShopperAnalytics from './components/ShopperAnalytics';
 
 interface SystemStatus { camera_active: boolean; db_connected: boolean; edge_ai_ready: boolean; }
 
@@ -43,7 +46,10 @@ const App = () => {
       case 'queue': return <QueueIntelligence />;
       case 'shelf': return <ShelfMonitoring />;
       case 'pos': return <PosInventory />;
-      case 'cameras': return <TestPage onBack={() => setActiveTab('overview')} />;
+      case 'cameras': return <CameraManagement />;
+      case 'analytics': return <ShopperAnalytics />;
+      case 'alerts': return <AlertsPanel />;
+      case 'reports': return <ReportsPage onBack={() => setActiveTab('overview')} />;
       default: return (
         <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
           <h2>Module Under Construction</h2>
@@ -74,7 +80,7 @@ const App = () => {
               { id: 'analytics', icon: <Users size={18} />, label: 'Shopper Analytics' },
               { id: 'queue', icon: <Activity size={18} />, label: 'Queue Intelligence' },
               { id: 'pos', icon: <Database size={18} />, label: 'POS & Inventory' },
-              { id: 'alerts', icon: <AlertTriangle size={18} />, label: 'Alerts', badge: 4 },
+              { id: 'alerts', icon: <AlertTriangle size={18} />, label: 'Alerts' },
               { id: 'reports', icon: <FileText size={18} />, label: 'Reports' },
             ].map(item => (
               <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id as any)}>

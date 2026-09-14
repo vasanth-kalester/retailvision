@@ -505,10 +505,11 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
     heatmap_gen = _LocalHeatmap(video_w=width, video_h=height, w=640, h=360)
 
     # ── Real analytics engine instances (writes to DB) ─────────────────────
-    from core.analytics import FootfallCounter, TrendAggregator, DwellTimeEngine
+    from core.analytics import FootfallCounter, TrendAggregator, DwellTimeEngine, SecurityEngine
     footfall_counter = FootfallCounter()
     trend_aggregator = TrendAggregator()
     dwell_engine = DwellTimeEngine()
+    security_engine = SecurityEngine()
 
     # ── Zone definitions ───────────────────────────────────────────────────
     ZONES = {
@@ -568,6 +569,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                 footfall_counter.update(person_tracks)
                 trend_aggregator.update(person_tracks)
                 dwell_engine.update(person_tracks)
+                security_engine.update(person_tracks)
 
                 for t in person_tracks:
                     session_unique_ids.add(t['track_id'])
@@ -606,6 +608,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
 
                 active_shoppers = 0
                 staff_count = 0
+                live_agents = []
 
                 for t in tracks:
                     bbox = t['bbox']
@@ -632,6 +635,15 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                                 wait_time = (t_id * 3) % 15 + 2
                                 draw_queue_metrics(annotated, bbox, wait_time)
                             label = f"ID:{t_id} {current_zone}"
+                        
+                        f_h, f_w = f.shape[:2]
+                        live_agents.append({
+                            "id": t_id,
+                            "type": "staff" if is_staff else "shopper",
+                            "zone": current_zone if not is_staff else "Floor",
+                            "x": cx / f_w,
+                            "y": cy / f_h
+                        })
                         draw_bounding_box_with_label(annotated, bbox, label, is_staff=is_staff)
 
                 heatmap_img = heatmap_gen.render(orig_resized)
@@ -646,9 +658,10 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                     staff_count,
                     queue_persons,
                     zone_counts,
+                    live_agents,
                 )
 
-            proc_b64, hm_b64, total_persons, shoppers, staff, queue_count, zone_counts = \
+            proc_b64, hm_b64, total_persons, shoppers, staff, queue_count, zone_counts, live_agents = \
                 await loop.run_in_executor(_executor, process_single_frame, frame)
 
             await websocket.send_json({
@@ -662,7 +675,8 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                     "queue_count": queue_count,
                     "session_unique": len(session_unique_ids),
                     "zone_counts": zone_counts,
-                }
+                },
+                "live_agents": live_agents
             })
 
             elapsed = time.time() - start_time

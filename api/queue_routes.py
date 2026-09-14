@@ -1,123 +1,111 @@
 """
 Queue Intelligence API — edge-first, in-memory queue state.
-The live WebSocket stream writes queue state via update_queue_state().
 """
 import time
 from collections import deque
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+import datetime
 
 router = APIRouter(prefix="/api/queue", tags=["queue"])
 
-# ── In-memory queue state (reset on server restart — edge device behavior) ──
+# ── In-memory detailed lane state ──
+_lane_state = [
+    {"id": "Lane 01", "type": "Regular", "status": "NORMAL", "queue_depth": 2, "estimated_wait": 1.2, "items_per_min": 22, "cashier": "Marco P."},
+    {"id": "Lane 02", "type": "Regular", "status": "NORMAL", "queue_depth": 1, "estimated_wait": 0.8, "items_per_min": 18, "cashier": "Elena R."},
+    {"id": "Lane 03", "type": "Express", "status": "NORMAL", "queue_depth": 0, "estimated_wait": 0.0, "items_per_min": 34, "cashier": "Jason T."},
+    {"id": "Zone 04", "type": "SCO Bank A", "status": "BALANCED", "queue_depth": 3, "estimated_wait": 1.1, "items_per_min": 0, "cashier": "David K."},
+    {"id": "Lane 05", "type": "Regular", "status": "STANDBY", "queue_depth": 0, "estimated_wait": 0.0, "items_per_min": 20, "cashier": "-"},
+    {"id": "Lane 06", "type": "Regular", "status": "STANDBY", "queue_depth": 0, "estimated_wait": 0.0, "items_per_min": 20, "cashier": "-"},
+    {"id": "Lane 07", "type": "Regular", "status": "STANDBY", "queue_depth": 0, "estimated_wait": 0.0, "items_per_min": 20, "cashier": "-"},
+    {"id": "Lane 08", "type": "Regular", "status": "STANDBY", "queue_depth": 0, "estimated_wait": 0.0, "items_per_min": 20, "cashier": "-"},
+]
+for l in _lane_state:
+    l["processed_count"] = 0
+
+_queue_history: deque = deque(maxlen=300)
+_chart_data: deque = deque(maxlen=24) # Historical points for the UI graph
+
+# ── Camera state tracker (used by main.py system-status) ──
 _queue_state = {
-    "checkout_count": 0,           # current persons detected in checkout zone
-    "peak_today": 0,               # peak queue length today
-    "last_updated": 0.0,           # epoch timestamp of last camera update
-    "camera_active": False,        # whether the stream is currently running
-    "total_customers_served": 0,   # incremented when queue shrinks
+    "camera_active": False,
+    "last_updated": 0.0,
 }
 
-# Rolling 5-minute history (one entry per second sampled)
-_queue_history: deque = deque(maxlen=300)
-
-# Configurable threshold — open new lane when queue exceeds this
-QUEUE_ALERT_THRESHOLD = 5
-
-def update_queue_state(count: int):
-    """Called by the WebSocket stream on every processed frame."""
+def update_global_queue_state(total_waiting: int):
     now = time.time()
-    prev_count = _queue_state["checkout_count"]
+    _queue_history.append({"t": now, "count": total_waiting})
+    
+    # Periodically append to chart data (e.g. every 10 ticks = 30s)
+    if len(_queue_history) % 10 == 0:
+        time_str = datetime.datetime.now().strftime("%I:%M %p")
+        processed = sum(l["processed_count"] for l in _lane_state)
+        
+        # Keep chart data moving by simulating past time points if empty
+        _chart_data.append({"time": time_str, "queued": total_waiting, "processed": processed})
+        
+        # reset processed count to form a differential for the next window
+        for l in _lane_state:
+            l["processed_count"] = 0
 
-    _queue_state["checkout_count"] = count
-    _queue_state["last_updated"] = now
+def update_queue_state(queue_persons: int):
+    """Called by the live camera WebSocket to update queue state from CV detections."""
     _queue_state["camera_active"] = True
+    _queue_state["last_updated"] = time.time()
 
-    if count > _queue_state["peak_today"]:
-        _queue_state["peak_today"] = count
+    # Distribute detected persons across active lanes
+    active_lanes = [l for l in _lane_state if l["status"] != "STANDBY"]
+    if not active_lanes:
+        _lane_state[0]["status"] = "NORMAL"
+        active_lanes = [_lane_state[0]]
 
-    # Rough customer-served heuristic: queue shrank by ≥2
-    if prev_count - count >= 2:
-        _queue_state["total_customers_served"] += (prev_count - count)
+    # Reset active lane depths and redistribute
+    per_lane = max(0, queue_persons // len(active_lanes))
+    remainder = max(0, queue_persons % len(active_lanes))
 
-    _queue_history.append({"t": now, "count": count})
+    for i, lane in enumerate(active_lanes):
+        lane["queue_depth"] = per_lane + (1 if i < remainder else 0)
+        depth = lane["queue_depth"]
+        items_per_min = lane["items_per_min"] or 20
+        wait_per_person = 10.0 / items_per_min
+        lane["estimated_wait"] = round(depth * wait_per_person, 1)
+        if lane["estimated_wait"] > 3.0 or depth > 5:
+            lane["status"] = "CONGESTED"
+        else:
+            lane["status"] = "BALANCED" if "SCO" in lane["type"] else "NORMAL"
 
+    total_waiting = sum(l["queue_depth"] for l in _lane_state)
+    update_global_queue_state(total_waiting)
 
 def mark_camera_inactive():
-    """Called when stream closes."""
+    """Called when the camera WebSocket disconnects."""
     _queue_state["camera_active"] = False
-
 
 @router.get("/status")
 def get_queue_status():
-    count = _queue_state["checkout_count"]
-    stale = (time.time() - _queue_state["last_updated"]) > 10
+    total_count = sum(l["queue_depth"] for l in _lane_state)
+    active_lanes = sum(1 for l in _lane_state if l["status"] != "STANDBY")
+    
+    # Check for congested lanes to trigger alerts
+    congested_lanes = [l for l in _lane_state if l["status"] == "CONGESTED"]
 
-    # Predictive Surge Logic (Check footfall over last 3 mins)
-    surge_forecast = False
-    net_inflow = 0
-    try:
-        from core.config import DB_TYPE
-        import sqlite3, os
-        if DB_TYPE == "sqlite" and not stale:
-            db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shopper_analytics.db")
-            with sqlite3.connect(db_path) as conn:
-                cur = conn.cursor()
-                three_mins_ago = time.time() - 180
-                cur.execute(f"SELECT direction, COUNT(*) FROM footfall WHERE timestamp >= {three_mins_ago} GROUP BY direction")
-                rows = cur.fetchall()
-                entries = sum(r[1] for r in rows if r[0] == "ENTRY")
-                exits = sum(r[1] for r in rows if r[0] == "EXIT")
-                net_inflow = entries - exits
-                # If 4 or more people entered than left in 3 mins, predict queue build-up
-                if net_inflow >= 4 and count < QUEUE_ALERT_THRESHOLD:
-                    surge_forecast = True
-    except Exception:
-        pass
+    # Compute avg wait of active lanes
+    active_wait_times = [l["estimated_wait"] for l in _lane_state if l["status"] != "STANDBY"]
+    avg_wait = sum(active_wait_times) / max(len(active_wait_times), 1) if active_wait_times else 0
 
-    if stale:
-        status = "no_data"
-        recommendation = "Start camera stream for live queue monitoring."
-    elif count > QUEUE_ALERT_THRESHOLD:
-        status = "high"
-        recommendation = f"⚠️ High queue ({count} customers)! Open an additional billing counter immediately."
-    elif surge_forecast:
-        status = "surge_predicted"
-        recommendation = f"📈 Surge Forecast: Rapid inflow detected (+{net_inflow} shoppers). Expect checkout congestion soon. Prepare Lane 2."
-    elif count == 0:
-        status = "clear"
-        recommendation = "Queue is clear. Optimal customer experience."
-    elif count <= 2:
-        status = "low"
-        recommendation = "Low queue. Maintain current staffing."
-    else:
-        status = "moderate"
-        recommendation = f"Moderate queue ({count} customers). Monitor closely."
-
-    # Compute avg from recent 60 samples (~last 60 sec)
-    recent = list(_queue_history)[-60:] if _queue_history else []
-    avg_recent = round(sum(e["count"] for e in recent) / max(len(recent), 1), 1)
-
-    # Build a compact sparkline (last 30 samples, 1 per entry)
-    sparkline = [e["count"] for e in list(_queue_history)[-30:]]
-
-    return JSONResponse({
-        "checkout_count": count,
-        "status": status,
-        "recommendation": recommendation,
-        "peak_today": _queue_state["peak_today"],
-        "avg_last_minute": avg_recent,
-        "total_served": _queue_state["total_customers_served"],
-        "camera_active": _queue_state["camera_active"] and not stale,
-        "sparkline": sparkline,
-        "alert_threshold": QUEUE_ALERT_THRESHOLD,
-        "surge_predicted": surge_forecast
-    })
-
-
+    return {
+        "status": "high" if congested_lanes else "normal",
+        "checkout_count": total_count,
+        "active_lanes": active_lanes,
+        "avg_wait": avg_wait,
+        "surge_predicted": total_count > 15,
+        "lanes": _lane_state,
+        "chart_data": list(_chart_data)
+    }
 
 @router.get("/history")
 def get_queue_history():
     """Returns last 5 minutes of queue counts (for charts)."""
     history = list(_queue_history)
     return JSONResponse({"history": history})
+

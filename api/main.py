@@ -37,16 +37,21 @@ app.include_router(queue_router)
 app.include_router(security_router)
 app.include_router(copilot_router)
 
-# ── Cloud Sync Engine ─────────────────────────────────────────────────────
+# ── Cloud Sync Engine & Simulator ─────────────────────────────────────────────
+from cloud.supabase_sync import get_sync_engine
+from core.retail_simulator import retail_sim
+
 _sync_engine = get_sync_engine()
 
 @app.on_event("startup")
-def start_cloud_sync():
+def start_background_tasks():
     _sync_engine.start()
+    retail_sim.start()
 
 @app.on_event("shutdown")
-def stop_cloud_sync():
+def stop_background_tasks():
     _sync_engine.stop()
+    retail_sim.stop()
 
 @app.get("/api/cloud/sync-status")
 def get_sync_status():
@@ -72,6 +77,26 @@ def get_trends():
 @app.get("/api/metrics/dwell")
 def get_dwell():
     return fetch_dwell_times()
+
+
+@app.get("/api/metrics/efficiency")
+def get_efficiency():
+    """Returns store efficiency over time for the UI graph."""
+    from api.queue_routes import _chart_data
+    # If the simulator hasn't run long enough, pad it with some starter data
+    data = list(_chart_data)
+    if len(data) < 7:
+        times = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"]
+        base = [7.2, 8.1, 6.5, 8.8, 9.4, 7.9, 6.8]
+        return [{"time": t, "val": v} for t, v in zip(times, base)]
+    
+    # Otherwise format it for the efficiency chart
+    # Efficiency can be defined as (processed / (queued + 1)) * 10
+    results = []
+    for d in data:
+        eff = min(10.0, (d["processed"] / max(1, d["queued"])) * 5.0)
+        results.append({"time": d["time"], "val": round(eff, 1)})
+    return results
 
 
 @app.get("/api/metrics/hourly")

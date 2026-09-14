@@ -2,16 +2,12 @@ import { useState, useEffect } from 'react';
 import { Camera, AlertTriangle, Package, Activity, TrendingUp, Cpu, Settings, Maximize, Bell, CheckCircle2, Users } from 'lucide-react';
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
-const EFFICIENCY_DATA = [
-  { time: '08:00', val: 7.2 }, { time: '10:00', val: 8.1 }, { time: '12:00', val: 6.5 },
-  { time: '14:00', val: 8.8 }, { time: '16:00', val: 9.4 }, { time: '18:00', val: 7.9 }, { time: '20:00', val: 6.8 }
-];
-
 export default function Overview({ systemStatus }: any) {
   const [footfall, setFootfall] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [stockAlerts, setStockAlerts] = useState<any[]>([]);
   const [securityAlerts, setSecurityAlerts] = useState<any[]>([]);
+  const [efficiencyData, setEfficiencyData] = useState<any[]>([]);
   
   // Camera stream logic
   const [liveThumbnail, setLiveThumbnail] = useState<string | null>(null);
@@ -19,16 +15,18 @@ export default function Overview({ systemStatus }: any) {
   useEffect(() => {
     const fetchKPIs = async () => {
       try {
-        const [ff, qc, sa, sec] = await Promise.all([
+        const [ff, qc, sa, sec, eff] = await Promise.all([
           fetch('http://localhost:8000/api/metrics/footfall').then(r => r.json()),
           fetch('http://localhost:8000/api/queue/status').then(r => r.json()),
           fetch('http://localhost:8000/api/inventory/warehouse/alerts').then(r => r.json()),
-          fetch('http://localhost:8000/api/security/alerts').then(r => r.json())
+          fetch('http://localhost:8000/api/security/alerts').then(r => r.json()),
+          fetch('http://localhost:8000/api/metrics/efficiency').then(r => r.json())
         ]);
         setFootfall(ff.ENTRY || 0);
         setQueueCount(qc.checkout_count || 0);
         setStockAlerts(sa.alerts || []);
         setSecurityAlerts(sec.alerts || []);
+        setEfficiencyData(eff || []);
       } catch {}
     };
     fetchKPIs();
@@ -217,7 +215,7 @@ export default function Overview({ systemStatus }: any) {
 
             <div style={{ height: 120 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={EFFICIENCY_DATA}>
+                <AreaChart data={efficiencyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--primary-blue)" stopOpacity={0.3}/>

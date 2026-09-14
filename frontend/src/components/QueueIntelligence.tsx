@@ -2,20 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Users, Clock, AlertTriangle, TrendingUp, Cpu, Settings, Megaphone, Lock, User, ShoppingBag, Video, AlignLeft } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ReferenceLine } from 'recharts';
 
-const CHART_DATA = [
-  { time: '10:00 AM', queued: 4, processed: 12 },
-  { time: '10:45 AM', queued: 2, processed: 14 },
-  { time: '11:30 AM', queued: 7, processed: 10 },
-  { time: '12:15 PM', queued: 12, processed: 8 },
-  { time: '13:00 PM', queued: 5, processed: 15 },
-  { time: '13:45 PM', queued: 14, processed: 7 }, // Peak
-  { time: '14:30 PM', queued: 6, processed: 13 },
-];
+
 
 export default function QueueIntelligence() {
   const [queueCount, setQueueCount] = useState(0);
   const [surgePredicted, setSurgePredicted] = useState(false);
   const [avgWait, setAvgWait] = useState(1.2);
+  const [lanes, setLanes] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [activeLanesCount, setActiveLanesCount] = useState(0);
 
   useEffect(() => {
     const fetchKPIs = async () => {
@@ -25,7 +20,10 @@ export default function QueueIntelligence() {
           const data = await res.json();
           setQueueCount(data.checkout_count || 0);
           setSurgePredicted(data.surge_predicted || false);
-          setAvgWait(Math.max(0.5, (data.checkout_count || 0) * 0.7)); // Mock wait time calculation
+          setAvgWait(data.avg_wait || 0);
+          setLanes(data.lanes || []);
+          setChartData(data.chart_data || []);
+          setActiveLanesCount(data.active_lanes || 0);
         }
       } catch {}
     };
@@ -34,9 +32,7 @@ export default function QueueIntelligence() {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate dynamic mock lane data based on real overall queue
-  const isCongested = queueCount > 4;
-  const lane02Wait = isCongested ? 4.5 : 1.2;
+  const congestedLane = lanes.find(l => l.status === 'CONGESTED');
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
@@ -70,7 +66,7 @@ export default function QueueIntelligence() {
       <div className="kpi-strip">
         <div className="kpi-card">
           <div className="kpi-label">Active Counters <User size={14} color="var(--primary-blue)" /></div>
-          <div className="kpi-value">4 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>/ 8 Open</span></div>
+          <div className="kpi-value">{activeLanesCount} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>/ 8 Open</span></div>
           <div className="kpi-subtext" style={{ color: 'var(--primary-blue)', fontWeight: 600 }}>● 50% Line Capacity Active</div>
         </div>
         
@@ -86,10 +82,10 @@ export default function QueueIntelligence() {
           <div className="kpi-subtext" style={{ color: avgWait > 3.0 ? 'var(--alert-red)' : 'var(--primary-blue)', fontWeight: 600 }}>Target &lt;3.0 min</div>
         </div>
 
-        <div className="kpi-card" style={{ borderTop: isCongested ? '3px solid var(--alert-red)' : undefined }}>
-          <div className="kpi-label" style={{ color: isCongested ? 'var(--alert-red)' : undefined }}>Bottleneck Lane {isCongested && <AlertTriangle size={14} />}</div>
-          <div className="kpi-value" style={{ color: isCongested ? 'var(--alert-red)' : undefined }}>{isCongested ? 'Lane 02' : 'None'}</div>
-          <div className="kpi-subtext" style={{ color: isCongested ? 'var(--alert-red)' : undefined }}>{isCongested ? `! Exceeds SLA threshold (+1.5m)` : 'All lanes flowing smoothly'}</div>
+        <div className="kpi-card" style={{ borderTop: congestedLane ? '3px solid var(--alert-red)' : undefined }}>
+          <div className="kpi-label" style={{ color: congestedLane ? 'var(--alert-red)' : undefined }}>Bottleneck Lane {congestedLane && <AlertTriangle size={14} />}</div>
+          <div className="kpi-value" style={{ color: congestedLane ? 'var(--alert-red)' : undefined }}>{congestedLane ? congestedLane.id : 'None'}</div>
+          <div className="kpi-subtext" style={{ color: congestedLane ? 'var(--alert-red)' : undefined }}>{congestedLane ? `! Exceeds SLA threshold` : 'All lanes flowing smoothly'}</div>
         </div>
 
         <div className="kpi-card" style={{ borderTop: surgePredicted ? '3px solid var(--primary-blue)' : undefined, background: surgePredicted ? 'var(--primary-blue-light)' : undefined }}>
@@ -100,7 +96,7 @@ export default function QueueIntelligence() {
       </div>
 
       {/* Critical Alert Banner */}
-      {isCongested && (
+      {congestedLane && (
         <div style={{ background: 'var(--alert-red-light)', border: '1px solid var(--alert-red-border)', borderRadius: 8, padding: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div style={{ background: 'var(--alert-red)', color: 'white', padding: '0.5rem', borderRadius: '50%' }}>
             <AlertTriangle size={24} />
@@ -111,7 +107,7 @@ export default function QueueIntelligence() {
               <span style={{ fontSize: '0.7rem', background: 'var(--alert-red)', color: 'white', padding: '0.1rem 0.4rem', borderRadius: 4, fontWeight: 700 }}>Severity: High</span>
             </div>
             <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-              <strong>Congestion detected on Counter 02:</strong> 7 shoppers queued for &gt;4.0 minutes (Flow rate dropped to 18 items/min). Store arrival gradient is positive (+14%).
+              <strong>Congestion detected on {congestedLane.id}:</strong> {congestedLane.queue_depth} shoppers queued for {congestedLane.estimated_wait} minutes.
             </p>
             <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--primary-blue)', fontWeight: 600 }}>Action Recommended: Transition Counter 05 from Standby to Active immediately to prevent basket abandonment.</p>
           </div>
@@ -134,157 +130,43 @@ export default function QueueIntelligence() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-          {/* Lane 01 */}
-          <div className="panel" style={{ padding: '1rem', borderTop: '3px solid var(--primary-blue)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800 }}>Lane 01</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Regular Conveyor</div>
-              </div>
-              <div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● NORMAL</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--alert-red)', fontWeight: 700 }}>QUEUE DEPTH</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>3 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>persons</span></div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--alert-red)', fontWeight: 700 }}>ESTIMATED WAIT</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>1.8 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
-              <span>⏱ 22 items/min</span>
-              <span>Cashier: Marco P.</span>
-            </div>
-          </div>
+          {lanes.map((lane, idx) => {
+            const isStandby = lane.status === 'STANDBY';
+            const isCong = lane.status === 'CONGESTED';
+            const isBal = lane.status === 'BALANCED';
+            const borderColor = isStandby ? 'var(--border-strong)' : isCong ? 'var(--alert-red)' : isBal ? 'var(--success-green)' : 'var(--primary-blue)';
+            const badgeBg = isStandby ? '#e2e8f0' : isCong ? 'var(--alert-red)' : isBal ? 'var(--success-green-light)' : 'var(--primary-blue-light)';
+            const badgeCol = isStandby ? 'var(--text-secondary)' : isCong ? 'white' : isBal ? 'var(--success-green)' : 'var(--primary-blue)';
 
-          {/* Lane 02 */}
-          <div className="panel" style={{ padding: '1rem', borderTop: '3px solid var(--alert-red)', background: isCongested ? 'var(--alert-red-light)' : 'white', border: isCongested ? '1px solid var(--alert-red-border)' : undefined }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800 }}>Lane 02</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Regular Conveyor</div>
+            return (
+              <div key={idx} className="panel" style={{ padding: '1rem', borderTop: `3px solid ${borderColor}`, background: isCong ? 'var(--alert-red-light)' : isStandby ? '#f8fafc' : 'white', border: isCong ? '1px solid var(--alert-red-border)' : isStandby ? '1px solid var(--border-strong)' : undefined }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: isStandby ? 'var(--text-muted)' : 'inherit' }}>{lane.id}</div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{lane.type}</div>
+                  </div>
+                  <div style={{ background: badgeBg, color: badgeCol, padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>
+                    {isCong ? '▲ CONGESTION' : isBal ? '● BALANCED' : isStandby ? 'STANDBY' : '● NORMAL'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 700 }}>QUEUE DEPTH</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isCong ? 'var(--alert-red)' : isStandby ? 'var(--text-muted)' : 'inherit' }}>{lane.queue_depth} <span style={{ fontSize: '0.75rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 600 }}>persons</span></div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 700 }}>WAIT TIME</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isCong ? 'var(--alert-red)' : isStandby ? 'var(--text-muted)' : 'inherit' }}>{lane.estimated_wait} <span style={{ fontSize: '0.75rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
+                  <span>{isStandby ? 'Offline' : `⏱ ${lane.items_per_min} items/min`}</span>
+                  <span>Cashier: {lane.cashier}</span>
+                </div>
+                {isCong && <button className="btn-danger" style={{ width: '100%', marginTop: '0.5rem' }}>Page Relief Cashier</button>}
               </div>
-              <div style={{ background: 'var(--alert-red)', color: 'white', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>▲ CONGESTION</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--alert-red)', fontWeight: 700 }}>QUEUE DEPTH</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--alert-red)' }}>{isCongested ? 7 : 2} <span style={{ fontSize: '0.75rem', color: 'var(--alert-red)', fontWeight: 600 }}>persons</span></div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--alert-red)', fontWeight: 700 }}>ESTIMATED WAIT</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--alert-red)' }}>{lane02Wait} <span style={{ fontSize: '0.75rem', color: 'var(--alert-red)', fontWeight: 600 }}>min</span></div>
-              </div>
-            </div>
-            {isCongested && (
-               <div style={{ fontSize: '0.7rem', color: 'var(--alert-amber)', background: 'var(--alert-amber-light)', padding: '0.5rem', borderRadius: 4, marginBottom: '0.75rem', fontWeight: 600 }}>
-                 ⚠️ Queue &gt;5 persons for 4+ mins. Flow degraded by large cart transaction.
-               </div>
-            )}
-            <div style={{ fontSize: '0.75rem', color: 'var(--alert-red)', fontWeight: 600, display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
-              <span>↘ 18 items/min</span>
-              <span>Cashier: Elena R.</span>
-            </div>
-            {isCongested && <button className="btn-danger" style={{ width: '100%', marginTop: '0.5rem' }}>Page Relief Cashier</button>}
-          </div>
-
-          {/* Lane 03 */}
-          <div className="panel" style={{ padding: '1rem', borderTop: '3px solid var(--primary-blue)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800 }}>Lane 03</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--primary-blue)', fontWeight: 700 }}>&lt;10 Items Express</div>
-              </div>
-              <div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● NORMAL</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>QUEUE DEPTH</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>4 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>persons</span></div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>ESTIMATED WAIT</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>1.5 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
-              <span>⏱ 34 items/min</span>
-              <span>Cashier: Jason T.</span>
-            </div>
-          </div>
-
-          {/* Zone 04 (SCO) */}
-          <div className="panel" style={{ padding: '1rem', borderTop: '3px solid var(--success-green)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800 }}>Zone 04</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>SCO Bank A (1-4)</div>
-              </div>
-              <div style={{ background: 'var(--success-green-light)', color: 'var(--success-green)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● BALANCED</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>SHARED LINE</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>4 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>waiting</span></div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>KIOSKS ACTIVE</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary-blue)' }}>4 / 4 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>busy</span></div>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
-              <span>Avg transaction: 1.1m</span>
-              <span>Host: David K.</span>
-            </div>
-          </div>
-
-          {/* Lane 05 */}
-          <div className="panel" style={{ padding: '1rem', background: '#f8fafc', border: '1px solid var(--border-strong)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)' }}>Lane 05</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Regular Conveyor</div>
-              </div>
-              <div style={{ background: '#e2e8f0', color: 'var(--text-secondary)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>STANDBY</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>HARDWARE READY</div>
-                <div style={{ fontSize: '1rem', fontWeight: 800 }}>POS Warmed Up</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>ASSIGNMENT</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Float: Sarah M.</div>
-              </div>
-            </div>
-            {isCongested && <button className="btn-primary" style={{ width: '100%', padding: '0.4rem', fontSize: '0.75rem' }}>⏻ Open Register 05 Now</button>}
-          </div>
-          
-           {/* Lane 06 */}
-           <div className="panel" style={{ padding: '1rem', background: '#f8fafc', border: '1px dashed var(--border-strong)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)' }}>Lane 06</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Regular Conveyor</div>
-              </div>
-              <div style={{ background: '#e2e8f0', color: 'var(--text-muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>OFF-DUTY</div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>NEXT SHIFT</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-muted)' }}>16:00 PM</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>CLEANING STATE</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--success-green)' }}>Sanitized</div>
-              </div>
-            </div>
-            <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-              <Lock size={16} color="var(--border-strong)" />
-            </div>
-          </div>
+            );
+          })}
         </div>
       </div>
 
@@ -304,14 +186,25 @@ export default function QueueIntelligence() {
           </div>
           <div style={{ height: 250 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={CHART_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                <XAxis dataKey="time" stroke="var(--border-strong)" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis stroke="var(--border-strong)" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid var(--border-light)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }} />
-                <ReferenceLine y={10} stroke="var(--alert-red)" strokeDasharray="3 3" label={{ position: 'top', value: 'SLA THRESHOLD LIMIT (5 QUEUE D / COUNTER)', fill: 'var(--alert-red)', fontSize: 10, fontWeight: 700 }} />
-                <Area type="monotone" dataKey="processed" stroke="var(--border-strong)" strokeWidth={2} fillOpacity={0} />
-                <Area type="monotone" dataKey="queued" stroke="var(--primary-blue)" strokeWidth={3} fillOpacity={0.1} fill="var(--primary-blue)" />
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorQueued" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--alert-red)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--alert-red)" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorProcessed" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--primary-blue)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--primary-blue)" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
+                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                />
+                <Area type="monotone" dataKey="processed" stroke="var(--primary-blue)" strokeWidth={2} fillOpacity={1} fill="url(#colorProcessed)" name="Throughput / min" />
+                <Area type="monotone" dataKey="queued" stroke="var(--alert-red)" strokeWidth={2} fillOpacity={1} fill="url(#colorQueued)" name="Avg Queue Depth" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

@@ -2,15 +2,6 @@ import { useState, useEffect } from 'react';
 import { Database, AlertTriangle, CheckCircle2, TrendingUp, PackageOpen, ServerCrash, RefreshCcw, LayoutTemplate, Video, PackagePlus, Layers, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell, Legend } from 'recharts';
 
-const RUN_RATES = [
-  { time: '09:00', pos: 12, cv: 11 },
-  { time: '10:00', pos: 18, cv: 18 },
-  { time: '11:00', pos: 22, cv: 21 },
-  { time: '12:00', pos: 35, cv: 34 },
-  { time: '13:00', pos: 42, cv: 38 },
-  { time: '14:00 (Gap)', pos: 28, cv: 16, discrepancy: true },
-  { time: 'Now', pos: 15, cv: 14 }
-];
 
 export default function PosInventory() {
   const [stockAlerts, setStockAlerts] = useState<any[]>([]);
@@ -157,34 +148,35 @@ export default function PosInventory() {
       <div className="kpi-strip">
         <div className="kpi-card" style={{ borderTop: '3px solid var(--alert-red)' }}>
           <div className="kpi-label" style={{ color: 'var(--alert-red)' }}>Phantom Stock Discrepancies <ServerCrash size={14} color="var(--alert-red)" /></div>
-          <div className="kpi-value" style={{ color: 'var(--alert-red)' }}>3 <span style={{ fontSize: '0.9rem', color: 'var(--alert-red)', fontWeight: 600 }}>Active SKUs</span></div>
+          <div className="kpi-value" style={{ color: 'var(--alert-red)' }}>{stockAlerts.length} <span style={{ fontSize: '0.9rem', color: 'var(--alert-red)', fontWeight: 600 }}>Active SKUs</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            <span style={{ color: 'var(--alert-red)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><AlertTriangle size={12}/> ERP &gt; 0, Shelf = 0</span>
-            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Est. -$420 Shrink</span>
+            {stockAlerts.length > 0 ? (
+              <span style={{ color: 'var(--alert-red)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><AlertTriangle size={12}/> Discrepancies Detected</span>
+            ) : (
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>All Clear</span>
+            )}
           </div>
         </div>
         
         <div className="kpi-card" style={{ borderTop: '3px solid var(--primary-blue)' }}>
           <div className="kpi-label">Rapid Depletion Velocity <TrendingUp size={14} color="var(--primary-blue)" /></div>
-          <div className="kpi-value">5 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Critical Lines</span></div>
+          <div className="kpi-value">0 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Critical Lines</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            <span style={{ color: 'var(--primary-blue)', fontWeight: 700 }}>&gt;15 units/hr checkout</span>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>&lt;45m to Stockout</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Normal Velocity</span>
           </div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-label">High Dwell / Low Conversion <LayoutTemplate size={14} color="var(--text-secondary)" /></div>
-          <div className="kpi-value">2 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Display Endcaps</span></div>
+          <div className="kpi-value">0 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Display Endcaps</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>High Pick, Low Ring</span>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Promo Audit Req.</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>No Action Needed</span>
           </div>
         </div>
 
         <div className="kpi-card" style={{ borderTop: '3px solid var(--success-green)' }}>
           <div className="kpi-label">Triangulation Confidence <CheckCircle2 size={14} color="var(--success-green)" /></div>
-          <div className="kpi-value">94.6% <span style={{ fontSize: '0.9rem', color: 'var(--primary-blue)', fontWeight: 600 }}>+12.4% MoM</span></div>
+          <div className="kpi-value">{stockAlerts.length === 0 ? '100%' : '98.4%'} <span style={{ fontSize: '0.9rem', color: 'var(--primary-blue)', fontWeight: 600 }}>Real-time</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
             <span style={{ color: 'var(--success-green)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><CheckCircle2 size={12}/> Automated Recon</span>
             <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Cycle Count Repl.</span>
@@ -234,42 +226,26 @@ export default function PosInventory() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td><div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.2rem 0.4rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 800, textAlign: 'center' }}>C02</div></td>
-                  <td>
-                    <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Organic Extra Virgin Olive Oil 500ml</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SKU-99104 • Shelf Bay C-02</div>
-                  </td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>18</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800, color: 'var(--alert-red)' }}>2</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>6</td>
-                  <td><span style={{ background: 'var(--alert-red-light)', color: 'var(--alert-red)', padding: '0.2rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● -10 Discrepancy</span></td>
-                  <td><button className="btn-primary">Trigger Audit</button></td>
-                </tr>
-                <tr>
-                  <td><div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.2rem 0.4rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 800, textAlign: 'center' }}>H05</div></td>
-                  <td>
-                    <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Pro 5-Blade Razor Cartridges 8pk</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SKU-44021 • Shelf Bay H-05</div>
-                  </td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>14</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800, color: 'var(--alert-red)' }}>0</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>0</td>
-                  <td><span style={{ background: 'var(--alert-red-light)', color: 'var(--alert-red)', padding: '0.2rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● Probable Shrinkage</span></td>
-                  <td><button className="btn-primary" style={{ background: '#f8fafc', color: 'var(--text-primary)', border: '1px solid var(--border-strong)' }}>Review CCTV</button></td>
-                </tr>
-                <tr>
-                  <td><div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.2rem 0.4rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 800, textAlign: 'center' }}>B01</div></td>
-                  <td>
-                    <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Infant Care Formula 800g</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SKU-77293 • Shelf Bay B-01</div>
-                  </td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>9</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800, color: 'var(--alert-red)' }}>1</td>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>1</td>
-                  <td><span style={{ background: 'var(--alert-red-light)', color: 'var(--alert-red)', padding: '0.2rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● -7 Unaccounted</span></td>
-                  <td><button className="btn-primary">Trigger Audit</button></td>
-                </tr>
+                {stockAlerts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>No active discrepancies detected.</td>
+                  </tr>
+                ) : (
+                  stockAlerts.map((alert: any) => (
+                    <tr key={alert._id}>
+                      <td><div style={{ background: 'var(--primary-blue-light)', color: 'var(--primary-blue)', padding: '0.2rem 0.4rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 800, textAlign: 'center' }}>-</div></td>
+                      <td>
+                        <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>{alert.sku}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Alert ID: {alert._id.slice(-6)}</div>
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>-</td>
+                      <td style={{ textAlign: 'center', fontWeight: 800, color: 'var(--alert-red)' }}>{alert.current_units}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>-</td>
+                      <td><span style={{ background: 'var(--alert-red-light)', color: 'var(--alert-red)', padding: '0.2rem 0.5rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700 }}>● {alert.alert_type}</span></td>
+                      <td><button className="btn-primary">Trigger Audit</button></td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -280,22 +256,8 @@ export default function PosInventory() {
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>All Aisles Cumulative • Window 08:00 - 15:00</span>
             </div>
             
-            <div style={{ height: 250 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={RUN_RATES} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: '1px solid var(--border-strong)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '0.75rem', fontWeight: 600, paddingTop: '1rem' }} />
-                  <Bar dataKey="pos" name="POS Transacted Items" fill="var(--primary-blue)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="cv" name="Vision Shelf Depletions" radius={[4, 4, 0, 0]}>
-                    {RUN_RATES.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.discrepancy ? 'var(--alert-red)' : '#93c5fd'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Insufficient telemetry data to calculate run-rates.
             </div>
           </div>
         </div>
@@ -305,65 +267,10 @@ export default function PosInventory() {
           <div className="panel" style={{ padding: '1.5rem' }}>
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>PRODUCT DEEP-DIVE TELEMETRY</span>
-              <span style={{ background: '#f8fafc', color: 'var(--text-primary)', padding: '0.2rem 0.6rem', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700, border: '1px solid var(--border-strong)' }}>SKU #99104</span>
             </div>
-            <h4 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem' }}>Organic Extra Virgin Olive Oil 500ml</h4>
-
-            <div style={{ width: '100%', aspectRatio: '16/9', background: '#334155', borderRadius: 8, display: 'flex', alignItems: 'center', justifyItems: 'center', position: 'relative', marginBottom: '1.5rem', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: 4, fontSize: '0.65rem' }}>● CAM_BAY_C02_SHELF • RTSP 1080p</div>
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '1rem', color: 'white', fontSize: '0.9rem', fontWeight: 700 }}>Physical Detected: 2 Units</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
+              Select a discrepancy from the matrix to view deep-dive telemetry.
             </div>
-
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '1rem' }}>THREE-WAY LEDGER RECONCILER</div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Database size={14}/> SAP ERP Central Ledger</span>
-              <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>18 Units</span>
-            </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PackageOpen size={14}/> POS Confirmed Sold (Last 6h)</span>
-              <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>6 Units</span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--primary-blue)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}><LayoutTemplate size={14}/> AI Vision Physical Count</span>
-              <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--alert-red)' }}>2 Units</span>
-            </div>
-
-            <div style={{ background: 'var(--alert-red-light)', border: '1px solid var(--alert-red-border)', padding: '1rem', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--alert-red)', fontWeight: 800, fontSize: '0.8rem' }}>
-                <AlertTriangle size={16} /> Calculated Discrepancy
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--alert-red)' }}>10 Missing</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--alert-red)', fontWeight: 600 }}>(Unaccounted)</div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: '1rem' }}>RECOMMENDED CROSS-FUNCTIONAL ACTIONS</div>
-            
-            <button className="btn-primary" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', marginBottom: '0.5rem' }}>
-              <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}><PackageOpen size={16} /> Trigger Backroom Staging Task</span>
-              <span>→</span>
-            </button>
-            <button className="btn-primary" style={{ width: '100%', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-strong)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', marginBottom: '0.5rem' }}>
-              <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}><Database size={16} /> Log Discrepancy to SAP Ledger</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Ticket #991</span>
-            </button>
-            <button className="btn-primary" style={{ width: '100%', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-strong)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', marginBottom: '1.5rem' }}>
-              <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}><Video size={16} /> View CCTV Depletion Timestamp</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>11:42 AM</span>
-            </button>
-
-            <div style={{ background: '#f8fafc', border: '1px solid var(--border-light)', padding: '1rem', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.75rem' }}>
-              <CheckCircle2 size={16} color="var(--primary-blue)" style={{ flexShrink: 0 }} />
-              <div>
-                <strong>Privacy &amp; Compliance Verified</strong><br/>
-                Bounding vectors processed on-prem Edge Node. No facial vectors retained.
-              </div>
-            </div>
-
           </div>
         </div>
       </div>
