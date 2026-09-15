@@ -9,6 +9,8 @@ from .inventory_routes import router as inventory_router
 from .queue_routes import router as queue_router
 from .security_routes import router as security_router
 from .copilot_routes import router as copilot_router
+from .camera_routes import router as camera_router
+from .zone_routes import router as zone_router
 from cloud.supabase_sync import get_sync_engine
 
 SQLITE_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shopper_analytics.db")
@@ -36,6 +38,8 @@ app.include_router(inventory_router)
 app.include_router(queue_router)
 app.include_router(security_router)
 app.include_router(copilot_router)
+app.include_router(camera_router)
+app.include_router(zone_router)
 
 # ── Cloud Sync Engine & Simulator ─────────────────────────────────────────────
 from cloud.supabase_sync import get_sync_engine

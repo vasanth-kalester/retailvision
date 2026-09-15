@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Activity, Users, Box, Video, Settings, LayoutGrid, AlertTriangle, FileText, Bot, X, Cloud, CloudOff, RefreshCcw } from 'lucide-react';
+import { ShieldCheck, Activity, Users, Box, Video, Settings, LayoutGrid, AlertTriangle, FileText, Bot, X, Cloud, CloudOff, RefreshCcw, MapPin } from 'lucide-react';
 import Overview from './components/Overview';
 import QueueIntelligence from './components/QueueIntelligence';
 import ShelfMonitoring from './components/ShelfMonitoring';
@@ -9,11 +9,12 @@ import CameraManagement from './components/CameraManagement';
 import AlertsPanel from './components/AlertsPanel';
 import ReportsPage from './components/ReportsPage';
 import ShopperAnalytics from './components/ShopperAnalytics';
+import ZoneManagement from './components/ZoneManagement';
 
 interface SystemStatus { camera_active: boolean; db_connected: boolean; edge_ai_ready: boolean; }
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'zones' | 'settings'>('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [cloudSync, setCloudSync] = useState<any>(null);
@@ -47,6 +48,7 @@ const App = () => {
       case 'shelf': return <ShelfMonitoring />;
       case 'pos': return <PosInventory />;
       case 'cameras': return <CameraManagement />;
+      case 'zones': return <ZoneManagement />;
       case 'analytics': return <ShopperAnalytics />;
       case 'alerts': return <AlertsPanel />;
       case 'reports': return <ReportsPage onBack={() => setActiveTab('overview')} />;
@@ -94,6 +96,7 @@ const App = () => {
             <h4 className="sidebar-label">Infrastructure</h4>
             {[
               { id: 'cameras', icon: <Video size={18} />, label: 'Camera Management' },
+              { id: 'zones', icon: <MapPin size={18} />, label: 'Zone Management' },
               { id: 'settings', icon: <Settings size={18} />, label: 'Settings' },
             ].map(item => (
               <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id as any)}>

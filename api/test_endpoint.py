@@ -511,20 +511,34 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
     dwell_engine = DwellTimeEngine()
     security_engine = SecurityEngine()
 
-    # ── Zone definitions ───────────────────────────────────────────────────
-    ZONES = {
-        "Zone A (Left)":   [(int(width*0.05), int(height*0.15)), (int(width*0.38), int(height*0.15)), (int(width*0.38), int(height*0.85)), (int(width*0.05), int(height*0.85))],
-        "Zone B (Center)": [(int(width*0.38), int(height*0.15)), (int(width*0.62), int(height*0.15)), (int(width*0.62), int(height*0.85)), (int(width*0.38), int(height*0.85))],
-        "Zone C (Right)":  [(int(width*0.62), int(height*0.15)), (int(width*0.95), int(height*0.15)), (int(width*0.95), int(height*0.85)), (int(width*0.62), int(height*0.85))],
-    }
+    from api.camera_routes import load_mappings
+    mappings = load_mappings()
+    mapped_zone = mappings.get(str(source))
 
-    # Checkout zone: bottom-center strip — persons here counted as queue
-    CHECKOUT_ZONE = [
-        (int(width*0.2), int(height*0.65)),
-        (int(width*0.8), int(height*0.65)),
-        (int(width*0.8), int(height*1.0)),
-        (int(width*0.2), int(height*1.0)),
-    ]
+    # ── Zone definitions ───────────────────────────────────────────────────
+    if mapped_zone:
+        # Treat the entire camera view as the mapped zone
+        ZONES = {
+            mapped_zone: [(0, 0), (width, 0), (width, height), (0, height)]
+        }
+        if mapped_zone == "Checkout":
+            CHECKOUT_ZONE = [(0, 0), (width, 0), (width, height), (0, height)]
+        else:
+            # Move checkout zone off-screen so it doesn't trigger if this is purely a Produce camera
+            CHECKOUT_ZONE = [(-10, -10), (-5, -10), (-5, -5), (-10, -5)]
+    else:
+        ZONES = {
+            "Zone A (Left)":   [(int(width*0.05), int(height*0.15)), (int(width*0.38), int(height*0.15)), (int(width*0.38), int(height*0.85)), (int(width*0.05), int(height*0.85))],
+            "Zone B (Center)": [(int(width*0.38), int(height*0.15)), (int(width*0.62), int(height*0.15)), (int(width*0.62), int(height*0.85)), (int(width*0.38), int(height*0.85))],
+            "Zone C (Right)":  [(int(width*0.62), int(height*0.15)), (int(width*0.95), int(height*0.15)), (int(width*0.95), int(height*0.85)), (int(width*0.62), int(height*0.85))],
+        }
+        # Checkout zone: bottom-center strip — persons here counted as queue
+        CHECKOUT_ZONE = [
+            (int(width*0.2), int(height*0.65)),
+            (int(width*0.8), int(height*0.65)),
+            (int(width*0.8), int(height*1.0)),
+            (int(width*0.2), int(height*1.0)),
+        ]
 
     def _in_zone(cx, cy, poly):
         from shapely.geometry import Point, Polygon

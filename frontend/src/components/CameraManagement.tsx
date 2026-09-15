@@ -5,7 +5,30 @@ export default function CameraManagement() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamFrames, setStreamFrames] = useState<{ original: string | null; processed: string | null }>({ original: null, processed: null });
   const [showAnalysis, setShowAnalysis] = useState(true);
+  const [availableZones, setAvailableZones] = useState<string[]>([]);
+  const [cameraMappings, setCameraMappings] = useState<Record<string, string>>({});
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    fetch('http://localhost:8000/api/zones')
+      .then(res => res.json())
+      .then(data => setAvailableZones(data.zones || []))
+      .catch(console.error);
+    
+    fetch('http://localhost:8000/api/cameras/mapping')
+      .then(res => res.json())
+      .then(data => setCameraMappings(data || {}))
+      .catch(console.error);
+  }, []);
+
+  const handleZoneChange = (cameraId: string, zoneName: string) => {
+    setCameraMappings(prev => ({ ...prev, [cameraId]: zoneName }));
+    fetch('http://localhost:8000/api/cameras/mapping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cameraId, zoneName })
+    }).catch(console.error);
+  };
 
   const startStream = () => {
     if (wsRef.current) wsRef.current.close();
@@ -85,8 +108,16 @@ export default function CameraManagement() {
               <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Camera size={16} color="var(--primary-blue)" /> Cam 01: Entrance
               </h3>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                <MapPin size={10} style={{ display: 'inline', marginRight: 2 }}/> Main Lobby
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                <MapPin size={10} />
+                <select 
+                  value={cameraMappings['3'] || ''} 
+                  onChange={(e) => handleZoneChange('3', e.target.value)}
+                  style={{ background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.1rem 0.2rem', outline: 'none' }}
+                >
+                  <option value="">Default Zones</option>
+                  {availableZones.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
               </div>
             </div>
             
@@ -148,8 +179,16 @@ export default function CameraManagement() {
               <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
                 <Camera size={16} /> Cam 02: Aisles
               </h3>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                <MapPin size={10} style={{ display: 'inline', marginRight: 2 }}/> Zone C
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                <MapPin size={10} />
+                <select 
+                  value={cameraMappings['4'] || ''} 
+                  onChange={(e) => handleZoneChange('4', e.target.value)}
+                  style={{ background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.1rem 0.2rem', outline: 'none' }}
+                >
+                  <option value="">Default Zones</option>
+                  {availableZones.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
               </div>
             </div>
             <div style={{ padding: '0.2rem 0.6rem', background: '#f1f5f9', color: 'var(--text-muted)', borderRadius: 20, fontSize: '0.7rem', fontWeight: 600 }}>STANDBY</div>
