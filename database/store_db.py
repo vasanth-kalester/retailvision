@@ -20,6 +20,9 @@ class MongoStoreDatabase:
         self.footfall = self.db["footfall"]
         self.zone_metrics = self.db["zone_metrics"]
         self.dwell_times = self.db["dwell_times"]
+        self.customer_journeys = self.db["customer_journeys"]
+        self.staff_interactions = self.db["staff_interactions"]
+        self.demographics = self.db["demographics"]
 
         self.write_queue = queue.Queue()
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
@@ -72,6 +75,42 @@ class MongoStoreDatabase:
             "alert_type": "loitering"
         }
         self.write_queue.put(("security_alerts", document))
+
+    def log_journey(self, track_id: int, journey_path: list):
+        document = {
+            "track_id": track_id,
+            "timestamp": time.time(),
+            "path": journey_path
+        }
+        self.write_queue.put(("customer_journeys", document))
+
+    def log_staff_interaction(self, staff_id: int, shopper_id: int, duration: float):
+        document = {
+            "timestamp": time.time(),
+            "staff_id": staff_id,
+            "shopper_id": shopper_id,
+            "duration": duration
+        }
+        self.write_queue.put(("staff_interactions", document))
+
+    def log_demographics(self, track_id: int, age: str, gender: str):
+        document = {
+            "track_id": track_id,
+            "timestamp": time.time(),
+            "age": age,
+            "gender": gender
+        }
+        self.write_queue.put(("demographics", document))
+
+    def log_video_analysis(self, filename: str, duration_sec: float, unique_visitors: int, insights: list):
+        document = {
+            "timestamp": time.time(),
+            "filename": filename,
+            "duration_sec": duration_sec,
+            "unique_visitors": unique_visitors,
+            "insights": insights
+        }
+        self.write_queue.put(("video_analysis_metadata", document))
 
     def shutdown(self):
         self.write_queue.put(None)
@@ -160,6 +199,42 @@ class SQLiteStoreDatabase:
                     alert_type TEXT
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS customer_journeys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    track_id INTEGER,
+                    timestamp REAL,
+                    path TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS staff_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL,
+                    staff_id INTEGER,
+                    shopper_id INTEGER,
+                    duration REAL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS demographics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    track_id INTEGER,
+                    timestamp REAL,
+                    age TEXT,
+                    gender TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS video_analysis_metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL,
+                    filename TEXT,
+                    duration_sec REAL,
+                    unique_visitors INTEGER,
+                    insights TEXT
+                )
+            """)
             conn.commit()
 
     def _worker(self):
@@ -193,6 +268,24 @@ class SQLiteStoreDatabase:
     def log_security_alert(self, track_id: int, duration: float):
         query = "INSERT INTO security_alerts (timestamp, track_id, duration, alert_type) VALUES (?, ?, ?, ?)"
         self.write_queue.put((query, (time.time(), track_id, duration, "loitering")))
+
+    def log_journey(self, track_id: int, journey_path: list):
+        import json
+        query = "INSERT INTO customer_journeys (track_id, timestamp, path) VALUES (?, ?, ?)"
+        self.write_queue.put((query, (track_id, time.time(), json.dumps(journey_path))))
+
+    def log_staff_interaction(self, staff_id: int, shopper_id: int, duration: float):
+        query = "INSERT INTO staff_interactions (timestamp, staff_id, shopper_id, duration) VALUES (?, ?, ?, ?)"
+        self.write_queue.put((query, (time.time(), staff_id, shopper_id, duration)))
+
+    def log_demographics(self, track_id: int, age: str, gender: str):
+        query = "INSERT INTO demographics (track_id, timestamp, age, gender) VALUES (?, ?, ?, ?)"
+        self.write_queue.put((query, (track_id, time.time(), age, gender)))
+
+    def log_video_analysis(self, filename: str, duration_sec: float, unique_visitors: int, insights: list):
+        import json
+        query = "INSERT INTO video_analysis_metadata (timestamp, filename, duration_sec, unique_visitors, insights) VALUES (?, ?, ?, ?, ?)"
+        self.write_queue.put((query, (time.time(), filename, duration_sec, unique_visitors, json.dumps(insights))))
 
     def shutdown(self):
         self.write_queue.put(None)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Activity, Users, Box, Video, Settings, LayoutGrid, AlertTriangle, FileText, Bot, X, Cloud, CloudOff, RefreshCcw, MapPin } from 'lucide-react';
+import { ShieldCheck, Activity, Users, Box, Video, Settings, LayoutGrid, AlertTriangle, FileText, Bot, X, Cloud, CloudOff, RefreshCcw, MapPin, Film } from 'lucide-react';
 import Overview from './components/Overview';
 import QueueIntelligence from './components/QueueIntelligence';
 import ShelfMonitoring from './components/ShelfMonitoring';
@@ -10,11 +10,12 @@ import AlertsPanel from './components/AlertsPanel';
 import ReportsPage from './components/ReportsPage';
 import ShopperAnalytics from './components/ShopperAnalytics';
 import ZoneManagement from './components/ZoneManagement';
+import TestPage from './TestPage';
 
 interface SystemStatus { camera_active: boolean; db_connected: boolean; edge_ai_ready: boolean; }
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'zones' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'zones' | 'settings' | 'testing'>('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [cloudSync, setCloudSync] = useState<any>(null);
@@ -52,6 +53,7 @@ const App = () => {
       case 'analytics': return <ShopperAnalytics />;
       case 'alerts': return <AlertsPanel />;
       case 'reports': return <ReportsPage onBack={() => setActiveTab('overview')} />;
+      case 'testing': return <TestPage onBack={() => setActiveTab('overview')} />;
       default: return (
         <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
           <h2>Module Under Construction</h2>
@@ -84,6 +86,7 @@ const App = () => {
               { id: 'pos', icon: <Database size={18} />, label: 'POS & Inventory' },
               { id: 'alerts', icon: <AlertTriangle size={18} />, label: 'Alerts' },
               { id: 'reports', icon: <FileText size={18} />, label: 'Reports' },
+              { id: 'testing', icon: <Film size={18} />, label: 'Testing' },
             ].map(item => (
               <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id as any)}>
                 {item.icon} <span style={{ flex: 1 }}>{item.label}</span>

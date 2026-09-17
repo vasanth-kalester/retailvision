@@ -50,12 +50,10 @@ _sync_engine = get_sync_engine()
 @app.on_event("startup")
 def start_background_tasks():
     _sync_engine.start()
-    retail_sim.start()
 
 @app.on_event("shutdown")
 def stop_background_tasks():
     _sync_engine.stop()
-    retail_sim.stop()
 
 @app.get("/api/cloud/sync-status")
 def get_sync_status():

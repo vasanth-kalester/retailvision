@@ -23,14 +23,14 @@ import numpy as np
 import threading
 from core.tracking import VideoStreamBuffer, Tracker
 from core.analytics import AnalyticsOrchestrator
-from core.config import ENTRY_EXIT_LINE, OPERATIONAL_ZONES, PROMOTIONAL_DISPLAYS
+from core.config import ENTRY_EXIT_LINE, OPERATIONAL_ZONES, PROMOTIONAL_DISPLAYS, INTERACTIVE_SHELVES
 from database.store_db import db
 from core.replenishment_engine import ReplenishmentEngine
 
 from core.visualization import (
     detect_staff_heuristic, draw_bounding_box_with_label,
     draw_queue_metrics, overlay_heatmap_pip, overlay_zones,
-    draw_trajectory
+    draw_trajectory, draw_staff_interaction
 )
 from collections import defaultdict
 from core.analytics import is_point_in_polygon
@@ -55,6 +55,7 @@ def setup_zones_interactive(frame):
         display = frame.copy()
         
         display = overlay_zones(display, OPERATIONAL_ZONES)
+        display = overlay_zones(display, INTERACTIVE_SHELVES)
         display = overlay_zones(display, new_zones)
         
         if len(drawing_poly) > 0:
@@ -133,8 +134,14 @@ def main():
             # 1. Ingestion & Tracking Phase
             tracks = tracker.infer_and_track(frame)
             
+            # Pre-calculate staff for analytics
+            staff_ids = set()
+            for t in tracks:
+                if detect_staff_heuristic(frame, t['bbox']):
+                    staff_ids.add(t['track_id'])
+            
             # 2. Analytics Extraction Phase
-            analytics.process(tracks)
+            analytics.process(tracks, staff_ids)
             
             # 3. Visualization Pipeline - Real-time tracking overlay
             active_shoppers = 0
@@ -142,19 +149,21 @@ def main():
             
             # Draw defined zones
             frame = overlay_zones(frame, OPERATIONAL_ZONES)
+            frame = overlay_zones(frame, INTERACTIVE_SHELVES)
             
             for t in tracks:
                 bbox = t['bbox']
                 centroid = t['centroid']
                 t_id = t['track_id']
+                age = t.get('age', 'N/A')
+                gender = t.get('gender', 'N/A')
                 
                 # Update track history for trajectory drawing
                 track_history[t_id].append(centroid)
                 if len(track_history[t_id]) > MAX_HISTORY:
                     track_history[t_id].pop(0)
                 
-                # Staff Detection Heuristic
-                is_staff = detect_staff_heuristic(frame, bbox)
+                is_staff = t_id in staff_ids
                 if is_staff:
                     staff_count += 1
                     label = f"ID: {t_id} Staff"
@@ -178,8 +187,9 @@ def main():
                     dwell_seconds = int(current_time - track_dwell_state[t_id]["entry_time"])
                     mins, secs = divmod(dwell_seconds, 60)
                     dwell_str = f"{mins:02d}:{secs:02d}"
-                            
-                    label = f"ID: {t_id} {current_zone} [{dwell_str}]"
+                    
+                    gen_abbr = gender[0] if gender != 'N/A' else '?'
+                    label = f"ID: {t_id} [{age}|{gen_abbr}] [{dwell_str}]"
                     
                     if "Checkout" in current_zone:
                         draw_queue_metrics(frame, bbox, dwell_str)
@@ -188,6 +198,14 @@ def main():
                     draw_trajectory(frame, track_history[t_id], color=(0, 255, 0))
                 
                 draw_bounding_box_with_label(frame, bbox, label, is_staff)
+
+            # Draw staff interactions
+            for pair, start_time in analytics.staff_service.interaction_states.items():
+                s_id, sh_id = pair
+                s_track = next((t for t in tracks if t['track_id'] == s_id), None)
+                sh_track = next((t for t in tracks if t['track_id'] == sh_id), None)
+                if s_track and sh_track:
+                    draw_staff_interaction(frame, s_track['centroid'], sh_track['centroid'])
 
             # Cleanup old track histories and dwell states
             active_ids = {t['track_id'] for t in tracks}

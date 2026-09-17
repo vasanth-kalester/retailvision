@@ -153,3 +153,16 @@ def draw_trajectory(frame, history_pts, color=(0, 255, 0), thickness=2):
         pt1 = tuple(map(int, history_pts[i-1]))
         pt2 = tuple(map(int, history_pts[i]))
         cv2.line(frame, pt1, pt2, color, thickness)
+
+def draw_staff_interaction(frame, staff_centroid, shopper_centroid):
+    """
+    Draws a dashed line connecting a staff member and a shopper to indicate interaction.
+    """
+    pt1 = tuple(map(int, staff_centroid))
+    pt2 = tuple(map(int, shopper_centroid))
+    cv2.line(frame, pt1, pt2, (255, 255, 0), 2)
+    
+    # Draw mid-point label
+    mx = (pt1[0] + pt2[0]) // 2
+    my = (pt1[1] + pt2[1]) // 2
+    cv2.putText(frame, "Assisting", (mx, my - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)

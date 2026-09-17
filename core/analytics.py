@@ -11,7 +11,9 @@ from .config import (
     ENTRY_EXIT_LINE, MIN_CROSSING_VELOCITY, OPERATIONAL_ZONES, 
     PROMOTIONAL_DISPLAYS, DWELL_TIME_THRESHOLD_SEC,
     HEATMAP_RESOLUTION, HEATMAP_DECAY_FACTOR, HEATMAP_GAUSSIAN_SIGMA,
-    CALIBRATION_PIXELS, CALIBRATION_WORLD
+    CALIBRATION_PIXELS, CALIBRATION_WORLD,
+    INTERACTIVE_SHELVES, PRODUCT_INTERACTION_THRESHOLD_SEC,
+    STAFF_INTERACTION_DIST_PIXELS, STAFF_INTERACTION_TIME_SEC
 )
 from database.store_db import db
 
@@ -177,6 +179,91 @@ class SecurityEngine:
             if t_id not in active_ids:
                 del self.track_start_times[t_id]
 
+class JourneyEngine:
+    def __init__(self):
+        self.active_journeys = {} # track_id -> list of centroids
+
+    def update(self, tracks):
+        active_ids = set()
+        for track in tracks:
+            t_id = track['track_id']
+            centroid = track['centroid']
+            active_ids.add(t_id)
+            if t_id not in self.active_journeys:
+                self.active_journeys[t_id] = []
+            self.active_journeys[t_id].append(centroid)
+            
+        for t_id in list(self.active_journeys.keys()):
+            if t_id not in active_ids:
+                # Track ended, flush journey
+                if len(self.active_journeys[t_id]) > 5: # Only log meaningful journeys
+                    db.log_journey(t_id, self.active_journeys[t_id])
+                del self.active_journeys[t_id]
+
+class StaffServiceEngine:
+    def __init__(self):
+        self.interaction_states = {} # (staff_id, shopper_id) -> start_time
+
+    def update(self, tracks, staff_ids):
+        now = time.time()
+        active_pairs = set()
+        
+        shoppers = [t for t in tracks if t['track_id'] not in staff_ids]
+        staff = [t for t in tracks if t['track_id'] in staff_ids]
+        
+        for s in staff:
+            for sh in shoppers:
+                dist = math.hypot(s['centroid'][0] - sh['centroid'][0], s['centroid'][1] - sh['centroid'][1])
+                if dist < STAFF_INTERACTION_DIST_PIXELS:
+                    pair = (s['track_id'], sh['track_id'])
+                    active_pairs.add(pair)
+                    if pair not in self.interaction_states:
+                        self.interaction_states[pair] = now
+                    else:
+                        duration = now - self.interaction_states[pair]
+                        if duration > STAFF_INTERACTION_TIME_SEC:
+                            db.log_staff_interaction(pair[0], pair[1], duration)
+                            # Reset to avoid spamming the DB every frame for the same interaction
+                            self.interaction_states[pair] = now
+                            
+        for pair in list(self.interaction_states.keys()):
+            if pair not in active_pairs:
+                del self.interaction_states[pair]
+
+class ProductInteractionEngine:
+    def __init__(self):
+        self.active_interactions = {}
+
+    def update(self, tracks):
+        now, active_ids = time.time(), set()
+
+        for track in tracks:
+            t_id, bbox = track['track_id'], track['bbox']
+            active_ids.add(t_id)
+            if t_id not in self.active_interactions: self.active_interactions[t_id] = {}
+
+            # Create a point from the bottom center of the bounding box (hands/reach area approximation)
+            reach_point = ((bbox[0] + bbox[2]) / 2, bbox[3] - (bbox[3]-bbox[1])*0.3)
+
+            for shelf_name, poly in INTERACTIVE_SHELVES.items():
+                in_zone = is_point_in_polygon(reach_point, poly) or is_point_in_polygon(track['centroid'], poly)
+                if in_zone and shelf_name not in self.active_interactions[t_id]:
+                    self.active_interactions[t_id][shelf_name] = now
+                elif not in_zone and shelf_name in self.active_interactions[t_id]:
+                    entry_time = self.active_interactions[t_id].pop(shelf_name)
+                    duration = now - entry_time
+                    if duration >= PRODUCT_INTERACTION_THRESHOLD_SEC:
+                        # Re-use dwell time logging for product interaction for MVP, or log it
+                        db.log_dwell_time(t_id, shelf_name, entry_time, now, duration)
+
+        for t_id in list(self.active_interactions.keys()):
+            if t_id not in active_ids:
+                for shelf_name, entry_time in self.active_interactions[t_id].items():
+                    duration = now - entry_time
+                    if duration >= PRODUCT_INTERACTION_THRESHOLD_SEC:
+                        db.log_dwell_time(t_id, shelf_name, entry_time, now, duration)
+                del self.active_interactions[t_id]
+
 class AnalyticsOrchestrator:
     def __init__(self):
         self.footfall = FootfallCounter()
@@ -184,13 +271,19 @@ class AnalyticsOrchestrator:
         self.dwell = DwellTimeEngine()
         self.heatmap = HeatmapGenerator()
         self.security = SecurityEngine()
+        self.journey = JourneyEngine()
+        self.staff_service = StaffServiceEngine()
+        self.product_interaction = ProductInteractionEngine()
 
-    def process(self, tracks):
+    def process(self, tracks, staff_ids):
         self.footfall.update(tracks)
         self.trend.update(tracks)
         self.dwell.update(tracks)
         self.heatmap.update(tracks)
         self.security.update(tracks)
+        self.journey.update(tracks)
+        self.staff_service.update(tracks, staff_ids)
+        self.product_interaction.update(tracks)
 
     def get_heatmap(self):
         return self.heatmap.get_heatmap_image()

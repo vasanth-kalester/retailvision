@@ -36,79 +36,41 @@ def encode_frame_to_base64(frame: np.ndarray) -> str:
 # Isolated analytics (no DB, fresh state per request)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class _LocalTrackState:
-    """Per-request track state with isolated ID counter."""
-    _next_id: int = 1
-
-    def __init__(self, bbox, score, class_id=0):
-        self.track_id = _LocalTrackState._next_id
-        _LocalTrackState._next_id += 1
-        self.score = score
-        self.class_id = class_id
-        self.time_since_update = 0
-        self.bbox = list(bbox)
-
-    def predict(self):
-        self.time_since_update += 1
-
-    def update(self, bbox, score, class_id=0):
-        self.time_since_update = 0
-        self.score = score
-        self.class_id = class_id
-        self.bbox = list(bbox)
-
-
 class _LocalTracker:
     """Lightweight tracker isolated per request (never touches global state)."""
 
     def __init__(self, yolo_model):
         self.model = yolo_model
-        self.tracks: list[_LocalTrackState] = []
-        _LocalTrackState._next_id = 1  # reset per-request
+        self.person_id_map = {}
+        self.next_person_id = 1
 
     def infer_and_track(self, frame) -> list[dict]:
         from core.config import PRODUCT_CLASSES
-        results = self.model(frame, classes=[0] + PRODUCT_CLASSES, conf=0.15, verbose=False)
-        detections = []
-        for r in results:
-            for box in r.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                score = float(box.conf[0].cpu())
-                class_id = int(box.cls[0].cpu())
-                detections.append([x1, y1, x2, y2, score, class_id])
-
+        # Use BoT-SORT for robust ReID, so the same person keeps the same ascending ID
+        results = self.model.track(frame, classes=[0] + PRODUCT_CLASSES, conf=0.5, persist=True, tracker="botsort.yaml", verbose=False)
         active_tracks = []
-        
-        # 1. Predict (advance age of all tracks)
-        for t in self.tracks:
-            t.predict()
-
-        # 2. Update with new detections
-        for det in detections:
-            bbox = det[:4]
-            class_id = det[5]
-            cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
-            matched = False
-            for t in self.tracks:
-                tcx = (t.bbox[0] + t.bbox[2]) / 2
-                tcy = (t.bbox[1] + t.bbox[3]) / 2
-                if abs(cx - tcx) < 150 and abs(cy - tcy) < 150 and t.time_since_update < 5 and getattr(t, 'class_id', 0) == class_id:
-                    t.update(bbox, det[4], class_id)
-                    matched = True
-                    break
-            if not matched:
-                self.tracks.append(_LocalTrackState(bbox, det[4], class_id))
-
-        self.tracks = [t for t in self.tracks if t.time_since_update <= 10]
-
-        for t in self.tracks:
-            if t.time_since_update == 0:
+        for r in results:
+            if r.boxes.id is None:
+                continue
+            boxes = r.boxes.xyxy.cpu().numpy()
+            track_ids = r.boxes.id.int().cpu().numpy()
+            scores = r.boxes.conf.cpu().numpy()
+            class_ids = r.boxes.cls.int().cpu().numpy()
+            
+            for box, raw_t_id, score, cls_id in zip(boxes, track_ids, scores, class_ids):
+                display_id = raw_t_id
+                if cls_id == 0:
+                    if raw_t_id not in self.person_id_map:
+                        self.person_id_map[raw_t_id] = self.next_person_id
+                        self.next_person_id += 1
+                    display_id = self.person_id_map[raw_t_id]
+                    
                 active_tracks.append({
-                    'track_id': t.track_id,
-                    'bbox': t.bbox,
-                    'score': t.score,
-                    'class_id': getattr(t, 'class_id', 0),
-                    'centroid': ((t.bbox[0] + t.bbox[2]) / 2, (t.bbox[1] + t.bbox[3]) / 2),
+                    'track_id': int(display_id),
+                    'bbox': box.tolist(),
+                    'score': float(score),
+                    'class_id': int(cls_id),
+                    'centroid': ((box[0] + box[2])/2, (box[1] + box[3])/2),
                 })
         return active_tracks
 
@@ -162,7 +124,7 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
     """
     try:
         from ultralytics import YOLO
-        model = YOLO("yolov8n.pt")
+        model = YOLO("yolov8s.pt")
     except Exception as e:
         raise RuntimeError(f"Could not load YOLO model: {e}")
 
@@ -178,15 +140,15 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
     orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # Scale down to max 1280 width to drastically improve YOLO & encoding speed
+    # Scale down to max 640 width to drastically improve YOLO & encoding speed
     width, height = orig_width, orig_height
-    if width > 1280:
-        scale = 1280 / width
+    if width > 640:
+        scale = 640 / width
         width = int(width * scale)
         height = int(height * scale)
 
-    # Process ~5 fps regardless of source FPS
-    process_every_n = max(1, int(fps // 5))
+    # Process ~2 fps regardless of source FPS (faster analysis)
+    process_every_n = max(1, int(fps // 2))
 
     tracker = _LocalTracker(model)
     heatmap_gen = _LocalHeatmap(video_w=width, video_h=height, w=640, h=360)
@@ -238,7 +200,7 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
             break
 
         # Resize to match our processing dimensions
-        if orig_width > 1280:
+        if orig_width > 640:
             frame = cv2.resize(frame, (width, height))
 
         video_time_sec = frame_idx / fps
@@ -295,12 +257,8 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
                         if _in_zone(cx, cy, poly):
                             current_zone = f"{zone_name}"
                             break
-                    label = f"ID:{t_id} {current_zone}"
+                    label = f"ID:{t_id}"
                     
-                    if "Right" in current_zone: # mock queue zone
-                        wait_time = (t_id * 3) % 15 + 2
-                        draw_queue_metrics(frame, bbox, wait_time)
-                        
                 draw_bounding_box_with_label(frame, bbox, label, is_staff=is_staff)
 
         # Heatmap is now returned separately, no longer overlaying PiP
@@ -337,6 +295,28 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
     avg_ppm = round((len(unique_ids) / max(duration_sec / 60, 0.01)), 1)
     traffic_curve = [{"time_sec": k * 10, "count": v} for k, v in sorted(traffic_timeline.items())]
     zone_summary = [{"zone": z, "unique_visitors": len(ids)} for z, ids in zone_hits.items() if len(ids) > 0]
+    
+    insights = []
+    total_persons = len(unique_ids)
+    if total_persons == 0:
+        insights.append("No shoppers detected in this video segment.")
+    else:
+        insights.append(f"Analyzed {total_persons} unique shoppers over {duration_sec} seconds. Peak concurrency was {peak_concurrent} shoppers.")
+        
+        if zone_summary:
+            sorted_zones = sorted(zone_summary, key=lambda x: x['unique_visitors'], reverse=True)
+            top_zone = sorted_zones[0]
+            insights.append(f"'{top_zone['zone']}' was the most highly trafficked area, capturing {top_zone['unique_visitors']} visitors. Consider prioritizing premium product placements here.")
+            
+            if len(sorted_zones) > 1:
+                bottom_zone = sorted_zones[-1]
+                insights.append(f"'{bottom_zone['zone']}' had the lowest engagement ({bottom_zone['unique_visitors']} visitors). Review promotional displays to increase draw to this area.")
+
+    try:
+        from database.store_db import db
+        db.log_video_analysis(original_filename, duration_sec, total_persons, insights)
+    except Exception as e:
+        print(f"Failed to log video analysis: {e}")
 
     return {
         "status": "success",
@@ -350,12 +330,13 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
         },
         "analytics": {
             "unique_persons_detected": len(unique_ids),
-            "active_tracks_at_end": len([t for t in tracker.tracks if t.time_since_update <= 1]),
-            "dwell_events": len([t for t in tracker.tracks]),
+            "active_tracks_at_end": len(last_tracks),
+            "dwell_events": len(last_tracks),
             "peak_concurrent_persons": peak_concurrent,
             "avg_persons_per_minute": avg_ppm,
             "traffic_curve": traffic_curve,
             "zone_breakdown": zone_summary,
+            "insights": insights,
         },
         "heatmap_b64": heatmap_b64,
         "keyframes": keyframes,
@@ -473,7 +454,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
 
     try:
         from ultralytics import YOLO
-        model = YOLO("yolov8n.pt")
+        model = YOLO("yolov8s.pt")
     except Exception as e:
         await websocket.send_json({"error": f"Could not load YOLO model: {e}"})
         await asyncio.sleep(0.1)
@@ -549,6 +530,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
 
     # Session-level KPI accumulators
     session_unique_ids: set = set()
+    last_inv_update = 0.0
 
     loop = asyncio.get_event_loop()
     target_fps = 5
@@ -574,12 +556,13 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
             orig_resized = cv2.resize(frame, (new_w, new_h))
             orig_b64 = encode_frame_to_base64(orig_resized)
 
-            def process_single_frame(f):
+            def process_single_frame(f, last_inv_update):
                 tracks = tracker.infer_and_track(f)
                 heatmap_gen.update(tracks)
 
                 # ── Feed into real analytics engines ───────────────────
                 person_tracks = [t for t in tracks if t.get('class_id', 0) == 0]
+                product_tracks = [t for t in tracks if t.get('class_id', 0) != 0]
                 footfall_counter.update(person_tracks)
                 trend_aggregator.update(person_tracks)
                 dwell_engine.update(person_tracks)
@@ -607,9 +590,49 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                     detect_staff_heuristic, draw_bounding_box_with_label,
                     draw_queue_metrics, overlay_zones
                 )
+                from core.config import INTERACTIVE_SHELVES
+                from core.inventory import update_store_stock
 
                 annotated = f.copy()
                 annotated = overlay_zones(annotated, ZONES)
+                
+                # Draw Interactive Shelves
+                for shelf_name, poly in INTERACTIVE_SHELVES.items():
+                    pts = np.array(poly, dtype=np.int32)
+                    cv2.polylines(annotated, [pts], isClosed=True, color=(255, 150, 0), thickness=2)
+                    
+                # Inventory logic
+                SHELF_SKU_MAP = {
+                    "Produce_Shelf": "SKU_PRODUCE",
+                    "Dairy_Shelf": "SKU_DAIRY"
+                }
+                
+                shelf_counts = {shelf: 0 for shelf in INTERACTIVE_SHELVES}
+                
+                for t in product_tracks:
+                    cx, cy = t['centroid']
+                    for shelf_name, poly in INTERACTIVE_SHELVES.items():
+                        if _in_zone(cx, cy, poly):
+                            shelf_counts[shelf_name] += 1
+                            break
+                            
+                # Update DB every 5 seconds
+                current_time = time.time()
+                if current_time - last_inv_update > 5.0:
+                    for shelf_name, count in shelf_counts.items():
+                        sku = SHELF_SKU_MAP.get(shelf_name)
+                        if sku:
+                            update_store_stock("STORE_001", sku, count)
+                    last_inv_update = current_time
+
+                # Draw counts on shelves
+                for shelf_name, poly in INTERACTIVE_SHELVES.items():
+                    count = shelf_counts[shelf_name]
+                    cv2.putText(
+                        annotated, f"{shelf_name}: {count} items",
+                        (poly[0][0], poly[0][1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 150, 0), 2
+                    )
 
                 # Draw checkout zone in cyan
                 checkout_pts = np.array(CHECKOUT_ZONE, dtype=np.int32)
@@ -646,9 +669,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                                     break
                             if _in_zone(cx, cy, CHECKOUT_ZONE):
                                 current_zone = "Checkout"
-                                wait_time = (t_id * 3) % 15 + 2
-                                draw_queue_metrics(annotated, bbox, wait_time)
-                            label = f"ID:{t_id} {current_zone}"
+                            label = f"ID:{t_id}"
                         
                         f_h, f_w = f.shape[:2]
                         live_agents.append({
@@ -673,10 +694,11 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
                     queue_persons,
                     zone_counts,
                     live_agents,
+                    last_inv_update,
                 )
 
-            proc_b64, hm_b64, total_persons, shoppers, staff, queue_count, zone_counts, live_agents = \
-                await loop.run_in_executor(_executor, process_single_frame, frame)
+            proc_b64, hm_b64, total_persons, shoppers, staff, queue_count, zone_counts, live_agents, last_inv_update = \
+                await loop.run_in_executor(_executor, process_single_frame, frame, last_inv_update)
 
             await websocket.send_json({
                 "original": orig_b64,

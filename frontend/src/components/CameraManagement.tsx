@@ -33,8 +33,7 @@ export default function CameraManagement() {
   const startStream = () => {
     if (wsRef.current) wsRef.current.close();
     
-    // Using source=3 as a default mock source/video or you can change to whatever is appropriate
-    const ws = new WebSocket(`ws://localhost:8000/api/test/stream?source=3`);
+    const ws = new WebSocket(`ws://localhost:8000/api/test/stream?source=0`);
     wsRef.current = ws;
     setIsStreaming(true);
     setStreamFrames({ original: null, processed: null });
@@ -172,31 +171,7 @@ export default function CameraManagement() {
           </div>
         </div>
 
-        {/* Camera 2 (Mock offline or duplicated for visual sake) */}
-        <div className="panel" style={{ padding: '1rem', borderTop: '3px solid var(--border-strong)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div>
-              <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
-                <Camera size={16} /> Cam 02: Aisles
-              </h3>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
-                <MapPin size={10} />
-                <select 
-                  value={cameraMappings['4'] || ''} 
-                  onChange={(e) => handleZoneChange('4', e.target.value)}
-                  style={{ background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)', padding: '0.1rem 0.2rem', outline: 'none' }}
-                >
-                  <option value="">Default Zones</option>
-                  {availableZones.map(z => <option key={z} value={z}>{z}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ padding: '0.2rem 0.6rem', background: '#f1f5f9', color: 'var(--text-muted)', borderRadius: 20, fontSize: '0.7rem', fontWeight: 600 }}>STANDBY</div>
-          </div>
-          <div style={{ width: '100%', aspectRatio: '16/9', background: '#0f172a', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-             <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Awaiting Activation...</div>
-          </div>
-        </div>
+
 
       </div>
     </div>
