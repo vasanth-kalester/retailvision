@@ -21,6 +21,7 @@ import time
 import cv2
 import numpy as np
 import threading
+import requests
 from core.tracking import VideoStreamBuffer, Tracker
 from core.analytics import AnalyticsOrchestrator
 from core.config import ENTRY_EXIT_LINE, OPERATIONAL_ZONES, PROMOTIONAL_DISPLAYS, INTERACTIVE_SHELVES
@@ -105,6 +106,8 @@ def main():
     track_history = defaultdict(list)
     track_dwell_state = {} # t_id -> {"zone": str, "entry_time": float}
     MAX_HISTORY = 60 # Remember path for ~2 seconds
+    last_queue_update = 0
+
     
     # Start insight generator thread
     insight_thread = threading.Thread(target=display_insights, daemon=True)
@@ -146,6 +149,7 @@ def main():
             # 3. Visualization Pipeline - Real-time tracking overlay
             active_shoppers = 0
             staff_count = 0
+            checkout_shoppers = 0
             
             # Draw defined zones
             frame = overlay_zones(frame, OPERATIONAL_ZONES)
@@ -193,6 +197,7 @@ def main():
                     
                     if "Checkout" in current_zone:
                         draw_queue_metrics(frame, bbox, dwell_str)
+                        checkout_shoppers += 1
                         
                     # Draw trajectory path for shoppers
                     draw_trajectory(frame, track_history[t_id], color=(0, 255, 0))
@@ -219,6 +224,13 @@ def main():
             # PIP Heatmap Overlay
             heatmap_img = analytics.get_heatmap()
             frame = overlay_heatmap_pip(frame, heatmap_img, active_shoppers, staff_count)
+
+            if time.time() - last_queue_update > 2.0:
+                try:
+                    requests.post("http://localhost:8000/api/queue/update", json={"queue_persons": checkout_shoppers}, timeout=0.1)
+                except Exception:
+                    pass
+                last_queue_update = time.time()
 
             cv2.imshow("Live MVP Feed", frame)
             

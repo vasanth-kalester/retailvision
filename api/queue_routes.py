@@ -7,7 +7,13 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 import datetime
 
+from pydantic import BaseModel
+
 router = APIRouter(prefix="/api/queue", tags=["queue"])
+
+class QueueUpdate(BaseModel):
+    queue_persons: int
+
 
 # ── In-memory detailed lane state ──
 _lane_state = [
@@ -108,4 +114,10 @@ def get_queue_history():
     """Returns last 5 minutes of queue counts (for charts)."""
     history = list(_queue_history)
     return JSONResponse({"history": history})
+
+@router.post("/update")
+def post_queue_update(data: QueueUpdate):
+    """Receive live queue depth updates from main.py."""
+    update_queue_state(data.queue_persons)
+    return {"status": "ok"}
 

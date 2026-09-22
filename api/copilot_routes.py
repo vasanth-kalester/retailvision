@@ -16,10 +16,11 @@ def _get_store_context():
     
     # 1. Queue Status
     try:
-        import json
         queue_resp = get_queue_status()
-        context['queue'] = json.loads(queue_resp.body.decode('utf-8'))
-    except:
+        # BUG-FIX: get_queue_status() returns a plain dict, not a JSONResponse.
+        # The previous .body.decode() call caused an AttributeError on every Copilot query.
+        context['queue'] = queue_resp if isinstance(queue_resp, dict) else {}
+    except Exception:
         pass
 
     # 2. Footfall & Zones

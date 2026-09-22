@@ -1,10 +1,6 @@
 import cv2
 import numpy as np
-
-# A default color for Staff uniform (e.g., Red for Target, Blue for Walmart)
-# Format is BGR
-STAFF_UNIFORM_COLOR_BGR = (0, 0, 200) # Deep Red
-COLOR_TOLERANCE = 50
+from .config import STAFF_UNIFORM_COLOR_BGR, COLOR_TOLERANCE
 
 def detect_staff_heuristic(frame, bbox):
     """

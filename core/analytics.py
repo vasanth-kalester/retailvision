@@ -8,12 +8,13 @@ from shapely.geometry import Point, Polygon
 from typing import Dict, Any, List, Tuple
 
 from .config import (
-    ENTRY_EXIT_LINE, MIN_CROSSING_VELOCITY, OPERATIONAL_ZONES, 
+    ENTRY_EXIT_LINE, MIN_CROSSING_VELOCITY, OPERATIONAL_ZONES,
     PROMOTIONAL_DISPLAYS, DWELL_TIME_THRESHOLD_SEC,
     HEATMAP_RESOLUTION, HEATMAP_DECAY_FACTOR, HEATMAP_GAUSSIAN_SIGMA,
-    CALIBRATION_PIXELS, CALIBRATION_WORLD,
+    CALIBRATION_PIXELS, CALIBRATION_WORLD, WORLD_WIDTH_M, WORLD_HEIGHT_M,
     INTERACTIVE_SHELVES, PRODUCT_INTERACTION_THRESHOLD_SEC,
-    STAFF_INTERACTION_DIST_PIXELS, STAFF_INTERACTION_TIME_SEC
+    STAFF_INTERACTION_DIST_PIXELS, STAFF_INTERACTION_TIME_SEC,
+    SECURITY_ALERT_COOLDOWN_SEC, JOURNEY_SAMPLE_EVERY_N_FRAMES
 )
 from database.store_db import db
 
@@ -51,7 +52,12 @@ class FootfallCounter:
 
             if t_id not in self.history:
                 cross = vector_cross_product(self.line_A, self.line_B, curr_pos)
-                self.history[t_id] = {'last_pos': curr_pos, 'last_cross': 1 if cross > 0 else -1, 'last_time': current_time, 'counted': False}
+                side = 1 if cross > 0 else -1
+                self.history[t_id] = {
+                    'last_pos': curr_pos, 'last_cross': side,
+                    'original_cross': side,  # track which side they started on
+                    'last_time': current_time, 'counted': False
+                }
                 continue
 
             prev = self.history[t_id]
@@ -60,11 +66,16 @@ class FootfallCounter:
 
             curr_cross = 1 if vector_cross_product(self.line_A, self.line_B, curr_pos) > 0 else -1
 
-            if curr_cross != prev['last_cross'] and not prev['counted'] and velocity >= MIN_CROSSING_VELOCITY:
-                direction = "ENTRY" if prev['last_cross'] < 0 else "EXIT"
-                print(f"[Analytics] {direction} recorded for ID {t_id}")
-                db.log_footfall(t_id, direction)
-                self.history[t_id]['counted'] = True
+            if curr_cross != prev['last_cross'] and velocity >= MIN_CROSSING_VELOCITY:
+                if not prev['counted']:
+                    direction = "ENTRY" if prev['last_cross'] < 0 else "EXIT"
+                    print(f"[Analytics] {direction} recorded for ID {t_id}")
+                    db.log_footfall(t_id, direction)
+                    self.history[t_id]['counted'] = True
+                # BUG-FIX: Reset counted flag when person returns to original side
+                # so re-entry is counted correctly on next crossing.
+            elif curr_cross == self.history[t_id].get('original_cross', curr_cross):
+                self.history[t_id]['counted'] = False
 
             self.history[t_id].update({'last_pos': curr_pos, 'last_cross': curr_cross, 'last_time': current_time})
 
@@ -142,7 +153,10 @@ class HeatmapGenerator:
         for track in tracks:
             u, v = (track['bbox'][0] + track['bbox'][2]) / 2, track['bbox'][3]
             X, Y = project_point(self.H, u, v)
-            map_x, map_y = int((X / 10.0) * self.w), int((Y / 8.0) * self.h)
+            # BUG-FIX: Use dynamic world bounds from config (WORLD_WIDTH_M/WORLD_HEIGHT_M)
+            # instead of hardcoded 10.0/8.0 which would be wrong for any other store layout.
+            map_x = int((X / max(WORLD_WIDTH_M,  1.0)) * self.w)
+            map_y = int((Y / max(WORLD_HEIGHT_M, 1.0)) * self.h)
             if 0 <= map_x < self.w and 0 <= map_y < self.h:
                 self.density_matrix[map_y, map_x] += 10.0
 
@@ -154,8 +168,10 @@ class HeatmapGenerator:
 
 class SecurityEngine:
     """Detects suspicious behavior (loitering) based on global dwell time."""
+
     def __init__(self, loiter_threshold_sec: float = 45.0):
         self.track_start_times = {}
+        self.last_alert_times  = {}   # track_id -> last alert timestamp
         self.loiter_threshold_sec = loiter_threshold_sec
 
     def update(self, tracks):
@@ -171,34 +187,53 @@ class SecurityEngine:
             else:
                 duration = now - self.track_start_times[t_id]
                 if duration > self.loiter_threshold_sec:
-                    # Emit alert to DB (this is picked up by security_routes)
-                    db.log_security_alert(t_id, duration)
+                    # BUG-FIX: Throttle DB writes to once per SECURITY_ALERT_COOLDOWN_SEC.
+                    # Previously fired on EVERY frame (~30x/sec) once threshold exceeded,
+                    # flooding the security_alerts table.
+                    last_alert = self.last_alert_times.get(t_id, 0)
+                    if now - last_alert >= SECURITY_ALERT_COOLDOWN_SEC:
+                        db.log_security_alert(t_id, duration)
+                        self.last_alert_times[t_id] = now
 
         # Cleanup lost tracks
         for t_id in list(self.track_start_times.keys()):
             if t_id not in active_ids:
                 del self.track_start_times[t_id]
+                self.last_alert_times.pop(t_id, None)
 
 class JourneyEngine:
+    """Records shopper paths. Subsamples to avoid memory bloat in long sessions."""
+
     def __init__(self):
-        self.active_journeys = {} # track_id -> list of centroids
+        self.active_journeys = {}   # track_id -> list of centroids
+        self._frame_counter  = {}   # track_id -> frame count since last sample
 
     def update(self, tracks):
         active_ids = set()
         for track in tracks:
-            t_id = track['track_id']
+            t_id     = track['track_id']
             centroid = track['centroid']
             active_ids.add(t_id)
+
             if t_id not in self.active_journeys:
-                self.active_journeys[t_id] = []
-            self.active_journeys[t_id].append(centroid)
-            
+                self.active_journeys[t_id] = [centroid]
+                self._frame_counter[t_id]  = 0
+            else:
+                # BUG-FIX: Subsample — only record every JOURNEY_SAMPLE_EVERY_N_FRAMES
+                # frames. Without this, a 4-hour session with 200 shoppers at 30 FPS
+                # would accumulate 3.6M centroid tuples in RAM.
+                self._frame_counter[t_id] += 1
+                if self._frame_counter[t_id] >= JOURNEY_SAMPLE_EVERY_N_FRAMES:
+                    self.active_journeys[t_id].append(centroid)
+                    self._frame_counter[t_id] = 0
+
         for t_id in list(self.active_journeys.keys()):
             if t_id not in active_ids:
                 # Track ended, flush journey
-                if len(self.active_journeys[t_id]) > 5: # Only log meaningful journeys
+                if len(self.active_journeys[t_id]) > 5:  # Only log meaningful journeys
                     db.log_journey(t_id, self.active_journeys[t_id])
                 del self.active_journeys[t_id]
+                self._frame_counter.pop(t_id, None)
 
 class StaffServiceEngine:
     def __init__(self):

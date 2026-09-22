@@ -1,0 +1,16 @@
+﻿# ByteTrack configuration tuned for INDOOR RETAIL tracking
+# Key differences from default:
+#   - Lower track_high_thresh (0.4 vs 0.5): start tracks on lower-confidence detections
+#     to capture shoppers partially occluded by shelves/other people
+#   - Lower new_track_thresh (0.3): create new tracks more eagerly in retail scenes
+#   - Higher track_buffer (60): retail shoppers move slowly; keep lost IDs longer
+#     before reassigning. Prevents ID switches when someone steps behind a shelf.
+#   - match_thresh 0.9: strict IoU match to avoid merging nearby shoppers at checkouts
+
+tracker_type: bytetrack
+track_high_thresh: 0.4        # min score to keep an existing track alive
+track_low_thresh: 0.1         # min score for second-round association
+new_track_thresh: 0.3         # min score to start a brand-new track
+track_buffer: 60              # frames to keep a lost track (2s at 30 FPS)
+match_thresh: 0.9             # IoU threshold for first-round match (strict)
+fuse_score: true              # fuse detection score with IoU for better matching

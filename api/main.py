@@ -27,7 +27,12 @@ app.mount("/outputs", StaticFiles(directory=os.path.join(os.path.dirname(__file_
 # Allow frontend to access the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Dev: allow all. Restrict in production.
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:3000",   # CRA dev server
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

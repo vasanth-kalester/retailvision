@@ -45,9 +45,18 @@ class _LocalTracker:
         self.next_person_id = 1
 
     def infer_and_track(self, frame) -> list[dict]:
-        from core.config import PRODUCT_CLASSES
-        # Use BoT-SORT for robust ReID, so the same person keeps the same ascending ID
-        results = self.model.track(frame, classes=[0] + PRODUCT_CLASSES, conf=0.5, persist=True, tracker="botsort.yaml", verbose=False)
+        from core.config import PRODUCT_CLASSES, YOLO_CONF_THRESHOLD, YOLO_IOU_THRESHOLD, YOLO_DEVICE
+        # Use ByteTrack; conf=0.3 to catch partially-occluded shoppers
+        results = self.model.track(
+            frame,
+            classes=[0] + PRODUCT_CLASSES,
+            conf=YOLO_CONF_THRESHOLD,
+            iou=YOLO_IOU_THRESHOLD,
+            device=YOLO_DEVICE,
+            persist=True,
+            tracker="bytetrack.yaml",
+            verbose=False,
+        )
         active_tracks = []
         for r in results:
             if r.boxes.id is None:
@@ -124,7 +133,7 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
     """
     try:
         from ultralytics import YOLO
-        model = YOLO("yolov8s.pt")
+        model = YOLO("yolo11s.pt")  # Auto-downloads on first run
     except Exception as e:
         raise RuntimeError(f"Could not load YOLO model: {e}")
 
@@ -454,7 +463,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
 
     try:
         from ultralytics import YOLO
-        model = YOLO("yolov8s.pt")
+        model = YOLO("yolo11s.pt")  # Auto-downloads on first run
     except Exception as e:
         await websocket.send_json({"error": f"Could not load YOLO model: {e}"})
         await asyncio.sleep(0.1)

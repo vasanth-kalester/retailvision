@@ -156,7 +156,10 @@ class MongoStoreDatabase:
 class SQLiteStoreDatabase:
     def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
-        self.write_queue = queue.Queue()
+        # Bounded queue: drops writes with a warning under extreme load rather than
+        # blocking the main thread (production safety net)
+        from core.config import DB_WRITE_QUEUE_MAXSIZE
+        self.write_queue = queue.Queue(maxsize=DB_WRITE_QUEUE_MAXSIZE)
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
         self._init_db()
         self.worker_thread.start()
@@ -238,20 +241,29 @@ class SQLiteStoreDatabase:
             conn.commit()
 
     def _worker(self):
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            while True:
-                task = self.write_queue.get()
-                if task is None:
-                    break
-                query, args = task
+        """Dedicated write thread with automatic reconnect on SQLite errors."""
+        while True:
+            task = self.write_queue.get()
+            if task is None:
+                break
+            query, args = task
+            # Reconnect loop — re-open connection on error rather than dying silently
+            for attempt in range(3):
                 try:
-                    cursor.execute(query, args)
-                    conn.commit()
+                    with sqlite3.connect(self.db_path, timeout=10) as conn:
+                        conn.execute("PRAGMA journal_mode=WAL")  # better concurrency
+                        conn.execute(query, args)
+                        conn.commit()
+                    break  # success
+                except sqlite3.OperationalError as e:
+                    if attempt < 2:
+                        time.sleep(0.05 * (attempt + 1))
+                    else:
+                        print(f"[SQLite DB Error] Dropped write after 3 attempts: {e}")
                 except sqlite3.Error as e:
                     print(f"[SQLite DB Error] {e}")
-                finally:
-                    self.write_queue.task_done()
+                    break
+            self.write_queue.task_done()
 
     def log_footfall(self, track_id: int, direction: str):
         query = "INSERT INTO footfall (timestamp, track_id, direction) VALUES (?, ?, ?)"
