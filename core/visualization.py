@@ -89,21 +89,21 @@ def overlay_heatmap_pip(frame, heatmap_img, active_shoppers, _unused=0):
     
     return frame
 
-def overlay_zones(frame, zones_dict):
+def overlay_zones(frame, zones_dict, color=(255, 0, 255)):
     """
     Draws the configured zones onto the frame.
     """
     overlay = frame.copy()
     for name, poly in zones_dict.items():
         pts = np.array(poly, np.int32).reshape((-1, 1, 2))
-        cv2.polylines(frame, [pts], isClosed=True, color=(255, 0, 255), thickness=2)
+        cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
         
         # Calculate centroid to put label
         M = cv2.moments(pts)
         if M["m00"] != 0:
             cX = int(M["m10"] / M["m00"])
             cY = int(M["m01"] / M["m00"])
-            cv2.putText(frame, name, (cX - 20, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+            cv2.putText(frame, name, (cX - 20, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
     return frame
 
