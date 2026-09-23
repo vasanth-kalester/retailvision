@@ -29,9 +29,9 @@ from database.store_db import db
 from core.replenishment_engine import ReplenishmentEngine
 
 from core.visualization import (
-    detect_staff_heuristic, draw_bounding_box_with_label,
-    draw_queue_metrics, overlay_heatmap_pip, overlay_zones,
-    draw_trajectory, draw_staff_interaction
+    overlay_zones, draw_queue_metrics, overlay_heatmap_pip,
+    draw_bounding_box_with_label,
+    draw_trajectory
 )
 from collections import defaultdict
 from core.analytics import is_point_in_polygon
@@ -137,11 +137,8 @@ def main():
             # 1. Ingestion & Tracking Phase
             tracks = tracker.infer_and_track(frame)
             
-            # Pre-calculate staff for analytics
+            # Pre-calculate staff for analytics (removed for now)
             staff_ids = set()
-            for t in tracks:
-                if detect_staff_heuristic(frame, t['bbox']):
-                    staff_ids.add(t['track_id'])
             
             # 2. Analytics Extraction Phase
             analytics.process(tracks, staff_ids)
@@ -167,14 +164,9 @@ def main():
                 if len(track_history[t_id]) > MAX_HISTORY:
                     track_history[t_id].pop(0)
                 
-                is_staff = t_id in staff_ids
-                if is_staff:
-                    staff_count += 1
-                    label = f"ID: {t_id} Staff"
-                else:
-                    active_shoppers += 1
-                    
-                    # Determine Zone Activity
+                active_shoppers += 1
+                
+                # Determine Zone Activity
                     current_zone = "Active Shopper"
                     for zone_name, poly in OPERATIONAL_ZONES.items():
                         if is_point_in_polygon(centroid, poly):
@@ -202,15 +194,7 @@ def main():
                     # Draw trajectory path for shoppers
                     draw_trajectory(frame, track_history[t_id], color=(0, 255, 0))
                 
-                draw_bounding_box_with_label(frame, bbox, label, is_staff)
-
-            # Draw staff interactions
-            for pair, start_time in analytics.staff_service.interaction_states.items():
-                s_id, sh_id = pair
-                s_track = next((t for t in tracks if t['track_id'] == s_id), None)
-                sh_track = next((t for t in tracks if t['track_id'] == sh_id), None)
-                if s_track and sh_track:
-                    draw_staff_interaction(frame, s_track['centroid'], sh_track['centroid'])
+                draw_bounding_box_with_label(frame, bbox, label, False)
 
             # Cleanup old track histories and dwell states
             active_ids = {t['track_id'] for t in tracks}
@@ -223,7 +207,7 @@ def main():
 
             # PIP Heatmap Overlay
             heatmap_img = analytics.get_heatmap()
-            frame = overlay_heatmap_pip(frame, heatmap_img, active_shoppers, staff_count)
+            frame = overlay_heatmap_pip(frame, heatmap_img, active_shoppers, 0)
 
             if time.time() - last_queue_update > 2.0:
                 try:

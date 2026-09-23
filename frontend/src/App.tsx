@@ -11,11 +11,12 @@ import ReportsPage from './components/ReportsPage';
 import ShopperAnalytics from './components/ShopperAnalytics';
 import ZoneManagement from './components/ZoneManagement';
 import TestPage from './TestPage';
+import DemoPage from './DemoPage';
 
 interface SystemStatus { camera_active: boolean; db_connected: boolean; edge_ai_ready: boolean; }
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'zones' | 'settings' | 'testing'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'shelf' | 'analytics' | 'queue' | 'pos' | 'alerts' | 'reports' | 'cameras' | 'zones' | 'settings' | 'testing' | 'demo'>('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [cloudSync, setCloudSync] = useState<any>(null);
@@ -54,6 +55,7 @@ const App = () => {
       case 'alerts': return <AlertsPanel />;
       case 'reports': return <ReportsPage onBack={() => setActiveTab('overview')} />;
       case 'testing': return <TestPage onBack={() => setActiveTab('overview')} />;
+      case 'demo': return <DemoPage onBack={() => setActiveTab('overview')} onGoToDashboard={() => setActiveTab('overview')} />;
       default: return (
         <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
           <h2>Module Under Construction</h2>
@@ -86,6 +88,7 @@ const App = () => {
               { id: 'pos', icon: <Database size={18} />, label: 'POS & Inventory' },
               { id: 'alerts', icon: <AlertTriangle size={18} />, label: 'Alerts' },
               { id: 'reports', icon: <FileText size={18} />, label: 'Reports' },
+              { id: 'demo', icon: <Film size={18} color={activeTab==='demo'?'#a5b4fc':'#818cf8'} />, label: '🎬 Demo Mode', badge: 'LIVE' },
               { id: 'testing', icon: <Film size={18} />, label: 'Testing' },
             ].map(item => (
               <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id as any)}>

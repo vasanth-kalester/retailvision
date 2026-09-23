@@ -2,35 +2,6 @@ import cv2
 import numpy as np
 from .config import STAFF_UNIFORM_COLOR_BGR, COLOR_TOLERANCE
 
-def detect_staff_heuristic(frame, bbox):
-    """
-    Very basic heuristic to check if a bounding box might be a staff member
-    by checking for a dominant color matching STAFF_UNIFORM_COLOR_BGR.
-    """
-    x1, y1, x2, y2 = map(int, bbox)
-    
-    # Ensure within bounds
-    x1 = max(0, x1)
-    y1 = max(0, y1)
-    x2 = min(frame.shape[1], x2)
-    y2 = min(frame.shape[0], y2)
-    
-    if x2 <= x1 or y2 <= y1:
-        return False
-        
-    roi = frame[y1:y2, x1:x2]
-    if roi.size == 0:
-        return False
-    
-    # Calculate mask of pixels matching uniform color
-    lower_bound = np.array([max(0, c - COLOR_TOLERANCE) for c in STAFF_UNIFORM_COLOR_BGR])
-    upper_bound = np.array([min(255, c + COLOR_TOLERANCE) for c in STAFF_UNIFORM_COLOR_BGR])
-    
-    mask = cv2.inRange(roi, lower_bound, upper_bound)
-    
-    # If more than 5% of the person's bounding box matches the uniform color
-    match_ratio = cv2.countNonZero(mask) / (roi.shape[0] * roi.shape[1])
-    return match_ratio > 0.05
 
 def draw_bounding_box_with_label(frame, bbox, label, is_staff=False, is_product=False):
     """
@@ -41,8 +12,6 @@ def draw_bounding_box_with_label(frame, bbox, label, is_staff=False, is_product=
     # Colors
     if is_product:
         box_color = (0, 165, 255) # Orange for products
-    elif is_staff:
-        box_color = (255, 0, 0) # Blue for staff
     else:
         box_color = (0, 255, 0) # Green for shopper
         
@@ -88,7 +57,7 @@ def draw_queue_metrics(frame, bbox, wait_time_str):
     
     cv2.putText(frame, label, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
 
-def overlay_heatmap_pip(frame, heatmap_img, active_shoppers, staff_detected):
+def overlay_heatmap_pip(frame, heatmap_img, active_shoppers, _unused=0):
     """
     Overlays the heatmap as a Picture-in-Picture in the top right corner.
     """
@@ -116,7 +85,7 @@ def overlay_heatmap_pip(frame, heatmap_img, active_shoppers, staff_detected):
     
     # Draw Text
     cv2.putText(frame, "SAFEWATCH AI TRACKING:", (x1 + 5, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-    cv2.putText(frame, f"{active_shoppers} Active Shoppers | {staff_detected} Staff detected", (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+    cv2.putText(frame, f"{active_shoppers} Active Shoppers", (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
     
     return frame
 
@@ -149,16 +118,3 @@ def draw_trajectory(frame, history_pts, color=(0, 255, 0), thickness=2):
         pt1 = tuple(map(int, history_pts[i-1]))
         pt2 = tuple(map(int, history_pts[i]))
         cv2.line(frame, pt1, pt2, color, thickness)
-
-def draw_staff_interaction(frame, staff_centroid, shopper_centroid):
-    """
-    Draws a dashed line connecting a staff member and a shopper to indicate interaction.
-    """
-    pt1 = tuple(map(int, staff_centroid))
-    pt2 = tuple(map(int, shopper_centroid))
-    cv2.line(frame, pt1, pt2, (255, 255, 0), 2)
-    
-    # Draw mid-point label
-    mx = (pt1[0] + pt2[0]) // 2
-    my = (pt1[1] + pt2[1]) // 2
-    cv2.putText(frame, "Assisting", (mx, my - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)

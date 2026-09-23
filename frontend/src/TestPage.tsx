@@ -198,6 +198,7 @@ const TestPage = ({ onBack }: { onBack: () => void }) => {
   const [streamFrames, setStreamFrames] = useState<{original: string | null, processed: string | null, heatmap: string | null}>({original: null, processed: null, heatmap: null});
   const [streamError, setStreamError]   = useState<string | null>(null);
   const [liveKpis, setLiveKpis] = useState<{total_persons: number; shoppers: number; staff: number; queue_count: number; session_unique: number; zone_counts: Record<string, number>} | null>(null);
+  const [liveEvents, setLiveEvents] = useState<{time: string; message: string}[]>([]);
   const [detectedCameras, setDetectedCameras] = useState<{index: number, label: string}[] | null>(null);
   const [detectingCameras, setDetectingCameras] = useState(false);
   const wsRef                           = useRef<WebSocket | null>(null);
@@ -326,6 +327,7 @@ const TestPage = ({ onBack }: { onBack: () => void }) => {
     setError(null);
     setIsStreaming(true);
     setStreamFrames({original: null, processed: null, heatmap: null});
+    setLiveEvents([]);
     
     const ws = new WebSocket(`ws://localhost:8000/api/test/stream?source=${encodeURIComponent(source)}&zones=${encodeURIComponent(JSON.stringify(customZones))}`);
     wsRef.current = ws;
@@ -343,6 +345,14 @@ const TestPage = ({ onBack }: { onBack: () => void }) => {
             heatmap: data.heatmap
           });
           if (data.kpis) setLiveKpis(data.kpis);
+          if (data.events && data.events.length > 0) {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            setLiveEvents(prev => {
+              const newEvents = data.events.map((e: any) => ({ time: timeStr, message: e.message }));
+              return [...newEvents, ...prev].slice(0, 50); // Keep last 50 events
+            });
+          }
         }
       } catch (e) {}
     };
@@ -670,7 +680,6 @@ const TestPage = ({ onBack }: { onBack: () => void }) => {
               {[
                 { label: 'In Frame', value: liveKpis.total_persons, color: '#6366f1' },
                 { label: 'Shoppers', value: liveKpis.shoppers, color: '#10b981' },
-                { label: 'Staff', value: liveKpis.staff, color: '#8b5cf6' },
                 { label: 'Queue', value: liveKpis.queue_count, color: liveKpis.queue_count >= 5 ? '#f43f5e' : '#f59e0b' },
                 { label: 'Session IDs', value: liveKpis.session_unique, color: '#94a3b8' },
               ].map(({ label, value, color }) => (
@@ -724,6 +733,25 @@ const TestPage = ({ onBack }: { onBack: () => void }) => {
                 <img src={`data:image/jpeg;base64,${streamFrames.heatmap}`} alt="Heatmap Stream" style={{ width: '100%', borderRadius: 12, border: '1px solid var(--surface-border)' }} />
               ) : (
                 <div style={{ background: '#000', borderRadius: 12, padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.875rem', height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Generating...</div>
+              )}
+            </div>
+          </div>
+          
+          {/* Live Activity Log */}
+          <div className="glass-card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+              <Activity size={18} color="#10b981" /> Live Activity Log
+            </h3>
+            <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {liveEvents.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Listening for events...</div>
+              ) : (
+                liveEvents.map((ev, i) => (
+                  <div key={i} style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: '0.875rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <span style={{ color: '#a5b4fc', fontFamily: 'monospace' }}>[{ev.time}]</span>
+                    <span>{ev.message}</span>
+                  </div>
+                ))
               )}
             </div>
           </div>
