@@ -12,6 +12,7 @@ export default function ZoneManagement() {
   const [zoneProducts, setZoneProducts] = useState<Record<string, string[]>>({});
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [newProductSku, setNewProductSku] = useState<string>('');
+  const [newZoneName, setNewZoneName] = useState<string>('');
 
   useEffect(() => {
     fetchZones();
@@ -73,6 +74,24 @@ export default function ZoneManagement() {
 
   const currentZoneProducts = selectedZone ? (zoneProducts[selectedZone] || []) : [];
 
+  const handleAddZone = () => {
+    if (newZoneName.trim() && !zones.includes(newZoneName.trim())) {
+      const added = newZoneName.trim();
+      setZones([...zones, added]);
+      setNewZoneName('');
+      if (!selectedZone) setSelectedZone(added);
+    }
+  };
+
+  const handleRemoveZone = (zoneToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newZones = zones.filter(z => z !== zoneToRemove);
+    setZones(newZones);
+    if (selectedZone === zoneToRemove) {
+      setSelectedZone(newZones.length > 0 ? newZones[0] : null);
+    }
+  };
+
   return (
     <div style={{ paddingBottom: '2rem', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -96,6 +115,23 @@ export default function ZoneManagement() {
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Store Zones
           </h3>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <input 
+              type="text" 
+              value={newZoneName}
+              onChange={(e) => setNewZoneName(e.target.value)}
+              placeholder="New zone name..."
+              style={{ flex: 1, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: '0.85rem' }}
+            />
+            <button 
+              className="btn-primary" 
+              onClick={handleAddZone}
+              disabled={!newZoneName.trim()}
+              style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: newZoneName.trim() ? 1 : 0.5 }}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {zones.map(zone => (
               <button 
@@ -115,7 +151,16 @@ export default function ZoneManagement() {
                   <MapPin size={16} />
                   {zone}
                 </div>
-                {selectedZone === zone && <ArrowRight size={16} />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  {selectedZone === zone && <ArrowRight size={16} style={{ marginRight: '0.25rem' }} />}
+                  <div 
+                    onClick={(e) => handleRemoveZone(zone, e)}
+                    style={{ color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '4px' }}
+                    title="Remove zone"
+                  >
+                    <Trash2 size={14} />
+                  </div>
+                </div>
               </button>
             ))}
           </div>

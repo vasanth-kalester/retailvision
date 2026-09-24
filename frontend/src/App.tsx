@@ -10,6 +10,7 @@ import AlertsPanel from './components/AlertsPanel';
 import ReportsPage from './components/ReportsPage';
 import ShopperAnalytics from './components/ShopperAnalytics';
 import ZoneManagement from './components/ZoneManagement';
+import SettingsPanel from './components/SettingsPanel';
 import TestPage from './TestPage';
 import DemoPage from './DemoPage';
 
@@ -51,6 +52,7 @@ const App = () => {
       case 'pos': return <PosInventory />;
       case 'cameras': return <CameraManagement />;
       case 'zones': return <ZoneManagement />;
+      case 'settings': return <SettingsPanel />;
       case 'analytics': return <ShopperAnalytics />;
       case 'alerts': return <AlertsPanel />;
       case 'reports': return <ReportsPage onBack={() => setActiveTab('overview')} />;

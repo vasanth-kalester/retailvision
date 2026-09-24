@@ -50,7 +50,7 @@ class _LocalTracker:
         # We will manually assign IDs to people based on centroid distance
         results = self.model.predict(
             frame,
-            conf=0.25,  # Increased for maximum accuracy
+            conf=0.15,  # Lowered to detect dense shelf items
             iou=0.45,
             device='cpu', # use cpu or auto
             verbose=False,
@@ -152,7 +152,7 @@ def _process_video(tmp_path: str, original_filename: str, custom_zones: str = No
     """
     try:
         from ultralytics import YOLO
-        model = YOLO("yolo11x.pt")  # Maximum accuracy model
+        model = YOLO("yolo11s.pt")  # Maximum accuracy model
     except Exception as e:
         raise RuntimeError(f"Could not load YOLO model: {e}")
 
@@ -479,7 +479,7 @@ async def stream_video(websocket: WebSocket, source: str = "0", zones: str = Non
 
     try:
         from ultralytics import YOLO
-        model = YOLO("yolo11x.pt")  # Maximum accuracy model
+        model = YOLO("yolo11s.pt")  # Maximum accuracy model
     except Exception as e:
         await websocket.send_json({"error": f"Could not load YOLO model: {e}"})
         await asyncio.sleep(0.1)
@@ -841,7 +841,7 @@ async def demo_stream_analysis(websocket: WebSocket, session_id: str):
 
     try:
         from ultralytics import YOLO
-        model = YOLO("yolo11x.pt")  # Maximum accuracy model
+        model = YOLO("yolo11s.pt")  # Maximum accuracy model
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"YOLO load failed: {e}"})
         await websocket.close()
