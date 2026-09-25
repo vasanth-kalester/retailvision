@@ -96,11 +96,17 @@ class DemoOverlay:
         cv2.putText(frame, label, (x1 + 5, y1 - 5), font, fs, (255, 255, 255), th)
 
     @staticmethod
-    def draw_product(frame, bbox, label="Product"):
+    def draw_product(frame, bbox, label="Item"):
         """Draw a product bounding box."""
         x1, y1, x2, y2 = map(int, bbox)
         color = DemoOverlay.COLORS['product']
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 1)
+        
+        if label:
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+            cv2.rectangle(frame, (x1, y1 - h - 4), (x1 + w + 4, y1), color, -1)
+            cv2.putText(frame, label, (x1 + 2, y1 - 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
     @staticmethod
     def draw_oos_gap(frame, gap_bbox):
@@ -281,39 +287,50 @@ class HeatmapEngine:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gap Detection for Shelf Videos
+# Shelf Inventory Mapping (Precise OpenCV Blob Detection)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_shelf_gaps(product_tracks, min_gap_px=40):
-    """Detect gaps between products on shelves (out-of-stock indicators)."""
-    gaps = []
-    if len(product_tracks) < 2:
-        return gaps
+def extract_product_boxes_cv(frame, zones):
+    """
+    Extracts generic product bounding boxes using edge detection and contour mapping.
+    This provides individual bounding boxes for each physical item on the shelf,
+    labeled generically as 'Item'.
+    """
+    products = []
+    if not zones:
+        return products
 
-    # Group products into rows by Y-center
-    rows = defaultdict(list)
-    for p in product_tracks:
-        x1, y1, x2, y2 = p['bbox']
-        cy = (y1 + y2) / 2
-        row_idx = int(cy // 50)  # 50px row buckets
-        rows[row_idx].append(p)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # Crisp edge detection to find product boundaries
+    edges = cv2.Canny(gray, 30, 100)
+    
+    # Small dilation to connect edges of the same product without merging adjacent products
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    dilated = cv2.dilate(edges, kernel, iterations=1)
 
-    for row_idx, items in rows.items():
-        if len(items) < 2:
+    for zname, poly in zones.items():
+        pts = np.array(poly, np.int32)
+        zx, zy, zw, zh = cv2.boundingRect(pts)
+        zx, zy = max(0, zx), max(0, zy)
+        zw = min(zw, frame.shape[1] - zx)
+        zh = min(zh, frame.shape[0] - zy)
+        if zw <= 0 or zh <= 0:
             continue
-        # Sort left to right
-        items.sort(key=lambda p: (p['bbox'][0] + p['bbox'][2]) / 2)
-        for i in range(len(items) - 1):
-            right_edge = items[i]['bbox'][2]
-            left_edge = items[i + 1]['bbox'][0]
-            gap_width = left_edge - right_edge
-            if gap_width > min_gap_px:
-                gap_bbox = (
-                    int(right_edge), int(items[i]['bbox'][1]),
-                    int(left_edge), int(items[i]['bbox'][3])
-                )
-                gaps.append(gap_bbox)
-    return gaps
+            
+        roi = dilated[zy:zy+zh, zx:zx+zw]
+        
+        # Find contours of individual items
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            # Filter sizes to match typical individual products (not massive blobs, not tiny noise)
+            if 15 < w < zw * 0.15 and 20 < h < zh:
+                gx, gy = zx + x, zy + y
+                products.append({'bbox': [gx, gy, gx + w, gy + h]})
+
+    return products
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,7 +429,7 @@ def process_video(video_path: str, model_path: str = "yolo11x.pt",
     # ── Load YOLO Model ──────────────────────────────────────────────────
     from ultralytics import YOLO
     model = YOLO(model_path)
-    print(f"[OK] Loaded {model_path}")
+    print(f"[OK] Loaded {model_path} for person tracking.")
 
     # ── Open Video ────────────────────────────────────────────────────────
     cap = cv2.VideoCapture(video_path)
@@ -453,16 +470,9 @@ def process_video(video_path: str, model_path: str = "yolo11x.pt",
     print(f"[OK] Zones: {list(ZONES.keys())}")
 
     # ── Detection Config ──────────────────────────────────────────────────
-    # For shelf-facing videos: detect ALL COCO classes (products = bottles, etc.)
-    # For people videos: detect only person (class 0)
-    if is_shelf:
-        detect_classes = None  # All classes
-        conf_threshold = 0.15  # Low threshold to catch every product
-        iou_threshold = 0.3    # Tighter NMS for dense shelves
-    else:
-        detect_classes = [0]   # Person only
-        conf_threshold = 0.25  # Balanced for people
-        iou_threshold = 0.45
+    detect_classes = [0]   # Person only for COCO model
+    conf_threshold = 0.25  
+    iou_threshold = 0.45
 
     print(f"[OK] Detection: classes={'ALL' if detect_classes is None else detect_classes}, "
           f"conf={conf_threshold}, iou={iou_threshold}")
@@ -617,10 +627,20 @@ def process_video(video_path: str, model_path: str = "yolo11x.pt",
         # Heatmap
         heatmap.update(person_tracks)
 
-        # Gap detection (shelf videos)
+        # Inventory mapping (shelf videos)
         gaps = []
         if is_shelf:
-            gaps = detect_shelf_gaps(product_tracks, min_gap_px=35)
+            product_tracks = extract_product_boxes_cv(frame, ZONES)
+            
+            # Simple heuristic to find gaps between the OpenCV product boxes
+            for zname, poly in ZONES.items():
+                zone_products = [p for p in product_tracks if point_in_polygon(((p['bbox'][0]+p['bbox'][2])/2, (p['bbox'][1]+p['bbox'][3])/2), poly)]
+                zone_products.sort(key=lambda p: p['bbox'][0])
+                for i in range(len(zone_products) - 1):
+                    right_edge = zone_products[i]['bbox'][2]
+                    left_edge = zone_products[i+1]['bbox'][0]
+                    if (left_edge - right_edge) > 40:
+                        gaps.append((int(right_edge), int(zone_products[i]['bbox'][1]), int(left_edge), int(zone_products[i]['bbox'][3])))
 
         # ── Queue detection (non-shelf) ───────────────────────────────────
         queue_count = 0
@@ -643,7 +663,7 @@ def process_video(video_path: str, model_path: str = "yolo11x.pt",
 
         # Draw products (shelf videos)
         for t in product_tracks:
-            DemoOverlay.draw_product(annotated, t['bbox'])
+            DemoOverlay.draw_product(annotated, t['bbox'], label="Item")
 
         # Draw OOS gaps
         for gap in gaps:
