@@ -128,6 +128,48 @@ export default function Overview({ systemStatus }: any) {
         {/* Left Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
+          {/* Efficiency Chart */}
+          <div className="panel" style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+              <h3 className="panel-title"><TrendingUp size={16} color="var(--primary-blue)" /> Store Restock Response Efficiency (Today)</h3>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Target: &lt;12 min resolution</span>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Avg Time to Restock</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>8.4 mins</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--primary-blue)', fontWeight: 600 }}>↓ 2.2 min faster than goal</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Detection Accuracy</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>99.2%</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>0.8% false positive</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Stockouts Prevented</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>38 items</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Est. $1,420 recovered</div>
+              </div>
+            </div>
+
+            <div style={{ height: 120 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={efficiencyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--primary-blue)" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="var(--primary-blue)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" stroke="var(--border-strong)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                  <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                  <Area type="monotone" dataKey="val" stroke="var(--primary-blue)" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           {/* Main Camera Feed Panel */}
           <div className="panel">
             <div className="panel-header" style={{ padding: '0.75rem 1rem' }}>
@@ -185,48 +227,6 @@ export default function Overview({ systemStatus }: any) {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Efficiency Chart */}
-          <div className="panel" style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <h3 className="panel-title"><TrendingUp size={16} color="var(--primary-blue)" /> Store Restock Response Efficiency (Today)</h3>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Target: &lt;12 min resolution</span>
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Avg Time to Restock</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>8.4 mins</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--primary-blue)', fontWeight: 600 }}>↓ 2.2 min faster than goal</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Detection Accuracy</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>99.2%</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>0.8% false positive</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Stockouts Prevented</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>38 items</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Est. $1,420 recovered</div>
-              </div>
-            </div>
-
-            <div style={{ height: 120 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={efficiencyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--primary-blue)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--primary-blue)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="time" stroke="var(--border-strong)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
-                  <Area type="monotone" dataKey="val" stroke="var(--primary-blue)" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
-                </AreaChart>
-              </ResponsiveContainer>
             </div>
           </div>
 

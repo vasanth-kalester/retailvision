@@ -90,8 +90,6 @@ const App = () => {
               { id: 'pos', icon: <Database size={18} />, label: 'POS & Inventory' },
               { id: 'alerts', icon: <AlertTriangle size={18} />, label: 'Alerts' },
               { id: 'reports', icon: <FileText size={18} />, label: 'Reports' },
-              { id: 'demo', icon: <Film size={18} color={activeTab==='demo'?'#a5b4fc':'#818cf8'} />, label: '🎬 Demo Mode', badge: 'LIVE' },
-              { id: 'testing', icon: <Film size={18} />, label: 'Testing' },
             ].map(item => (
               <button key={item.id} className={`nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id as any)}>
                 {item.icon} <span style={{ flex: 1 }}>{item.label}</span>

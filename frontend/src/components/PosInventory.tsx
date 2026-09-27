@@ -116,6 +116,11 @@ export default function PosInventory() {
     }
   };
 
+  const noStockCount = warehouseInventory.filter(item => item.total_units === 0).length;
+  const lowStockCount = warehouseInventory.filter(item => item.total_units > 0 && item.total_units <= item.reorder_point).length;
+  const totalSkus = warehouseInventory.length;
+  const healthPercentage = totalSkus > 0 ? Math.round(((totalSkus - noStockCount - lowStockCount) / totalSkus) * 100) : 100;
+
   return (
     <div style={{ paddingBottom: '2rem' }}>
       {/* Top Action Bar */}
@@ -147,39 +152,39 @@ export default function PosInventory() {
       {/* KPI Strip */}
       <div className="kpi-strip">
         <div className="kpi-card" style={{ borderTop: '3px solid var(--alert-red)' }}>
-          <div className="kpi-label" style={{ color: 'var(--alert-red)' }}>Phantom Stock Discrepancies <ServerCrash size={14} color="var(--alert-red)" /></div>
-          <div className="kpi-value" style={{ color: 'var(--alert-red)' }}>{stockAlerts.length} <span style={{ fontSize: '0.9rem', color: 'var(--alert-red)', fontWeight: 600 }}>Active SKUs</span></div>
+          <div className="kpi-label" style={{ color: 'var(--alert-red)' }}>Out of Stock Products <ServerCrash size={14} color="var(--alert-red)" /></div>
+          <div className="kpi-value" style={{ color: 'var(--alert-red)' }}>{noStockCount} <span style={{ fontSize: '0.9rem', color: 'var(--alert-red)', fontWeight: 600 }}>SKUs</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            {stockAlerts.length > 0 ? (
-              <span style={{ color: 'var(--alert-red)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><AlertTriangle size={12}/> Discrepancies Detected</span>
+            {noStockCount > 0 ? (
+              <span style={{ color: 'var(--alert-red)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><AlertTriangle size={12}/> Requires Restock</span>
             ) : (
               <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>All Clear</span>
             )}
           </div>
         </div>
         
-        <div className="kpi-card" style={{ borderTop: '3px solid var(--primary-blue)' }}>
-          <div className="kpi-label">Rapid Depletion Velocity <TrendingUp size={14} color="var(--primary-blue)" /></div>
-          <div className="kpi-value">0 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Critical Lines</span></div>
+        <div className="kpi-card" style={{ borderTop: '3px solid var(--alert-amber)' }}>
+          <div className="kpi-label">Low Stock Alerts <TrendingUp size={14} color="var(--alert-amber)" /></div>
+          <div className="kpi-value">{lowStockCount} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>SKUs</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Normal Velocity</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Below Reorder Point</span>
           </div>
         </div>
 
         <div className="kpi-card">
-          <div className="kpi-label">High Dwell / Low Conversion <LayoutTemplate size={14} color="var(--text-secondary)" /></div>
-          <div className="kpi-value">0 <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Display Endcaps</span></div>
+          <div className="kpi-label">Total SKUs Tracked <PackageOpen size={14} color="var(--text-secondary)" /></div>
+          <div className="kpi-value">{totalSkus} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Active</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>No Action Needed</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Synced with Edge Nodes</span>
           </div>
         </div>
 
         <div className="kpi-card" style={{ borderTop: '3px solid var(--success-green)' }}>
-          <div className="kpi-label">Triangulation Confidence <CheckCircle2 size={14} color="var(--success-green)" /></div>
-          <div className="kpi-value">{stockAlerts.length === 0 ? '100%' : '98.4%'} <span style={{ fontSize: '0.9rem', color: 'var(--primary-blue)', fontWeight: 600 }}>Real-time</span></div>
+          <div className="kpi-label">Overall Inventory Health <CheckCircle2 size={14} color="var(--success-green)" /></div>
+          <div className="kpi-value">{healthPercentage}% <span style={{ fontSize: '0.9rem', color: 'var(--primary-blue)', fontWeight: 600 }}>Optimal</span></div>
           <div className="kpi-subtext" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
             <span style={{ color: 'var(--success-green)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}><CheckCircle2 size={12}/> Automated Recon</span>
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Cycle Count Repl.</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Real-time</span>
           </div>
         </div>
       </div>
@@ -207,8 +212,8 @@ export default function PosInventory() {
                 <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Triangulated triggers prioritized by operational severity</p>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {['Phantom Stock (3)', 'Velocity Depletion (5)', 'High Dwell/Low Sale (2)', 'Audit Ledger'].map((t, i) => (
-                   <span key={t} style={{ background: i === 0 ? 'var(--primary-blue-light)' : '#f8fafc', color: i === 0 ? 'var(--primary-blue)' : 'var(--text-secondary)', padding: '0.4rem 0.75rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, border: `1px solid ${i === 0 ? 'var(--primary-blue-border)' : 'var(--border-light)'}`, cursor: 'pointer' }}>{t}</span>
+                {[`Out of Stock (${noStockCount})`, `Low Stock (${lowStockCount})`, 'Healthy Stock', 'Audit Ledger'].map((t, i) => (
+                   <span key={t} style={{ background: i === 0 ? 'var(--alert-red-light)' : i === 1 ? 'var(--alert-amber-light)' : '#f8fafc', color: i === 0 ? 'var(--alert-red)' : i === 1 ? 'var(--alert-amber)' : 'var(--text-secondary)', padding: '0.4rem 0.75rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, border: `1px solid ${i === 0 ? 'var(--alert-red)' : i === 1 ? 'var(--alert-amber)' : 'var(--border-light)'}`, cursor: 'pointer' }}>{t}</span>
                 ))}
               </div>
             </div>

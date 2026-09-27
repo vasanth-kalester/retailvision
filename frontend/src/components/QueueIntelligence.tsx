@@ -11,6 +11,37 @@ export default function QueueIntelligence() {
   const [lanes, setLanes] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [activeLanesCount, setActiveLanesCount] = useState(0);
+  const [laneOverrides, setLaneOverrides] = useState<Record<string, string>>({});
+  const [demoSimulateWait, setDemoSimulateWait] = useState(false);
+  const [simulatedWait, setSimulatedWait] = useState(1.0);
+
+  useEffect(() => {
+    let interval: any;
+    if (demoSimulateWait) {
+      interval = setInterval(() => {
+        setSimulatedWait(prev => {
+          let next = prev + 0.1;
+          if (next > 2.05) next = 1.0;
+          return parseFloat(next.toFixed(1));
+        });
+      }, 1000); // 1 sec interval
+    } else {
+      setSimulatedWait(1.0);
+    }
+    return () => clearInterval(interval);
+  }, [demoSimulateWait]);
+
+  const toggleLaneStatus = (laneId: string, currentStatus: string) => {
+    setLaneOverrides(prev => {
+      const newOverrides = { ...prev };
+      if (currentStatus === 'STANDBY') {
+        newOverrides[laneId] = 'NORMAL';
+      } else {
+        newOverrides[laneId] = 'STANDBY';
+      }
+      return newOverrides;
+    });
+  };
 
   useEffect(() => {
     const fetchKPIs = async () => {
@@ -48,6 +79,13 @@ export default function QueueIntelligence() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button 
+            className="btn-primary" 
+            onClick={() => setDemoSimulateWait(!demoSimulateWait)}
+            style={{ background: demoSimulateWait ? 'var(--primary-blue)' : '#f1f5f9', color: demoSimulateWait ? 'white' : 'var(--text-primary)', border: '1px solid var(--border-strong)', display: 'flex', gap: '0.5rem', alignItems: 'center' }}
+          >
+            <Clock size={14} /> {demoSimulateWait ? 'Stop Wait Sim' : 'Simulate Wait'}
+          </button>
           <button className="btn-primary" style={{ background: '#f1f5f9', color: 'var(--text-primary)', border: '1px solid var(--border-strong)', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <Settings size={14} /> Config Thresholds
           </button>
@@ -78,8 +116,8 @@ export default function QueueIntelligence() {
 
         <div className="kpi-card">
           <div className="kpi-label">Avg Wait Time <Clock size={14} color="var(--text-secondary)" /></div>
-          <div className="kpi-value">{avgWait.toFixed(1)} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
-          <div className="kpi-subtext" style={{ color: avgWait > 3.0 ? 'var(--alert-red)' : 'var(--primary-blue)', fontWeight: 600 }}>Target &lt;3.0 min</div>
+          <div className="kpi-value">{(demoSimulateWait ? simulatedWait : avgWait).toFixed(1)} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
+          <div className="kpi-subtext" style={{ color: (demoSimulateWait ? simulatedWait : avgWait) > 3.0 ? 'var(--alert-red)' : 'var(--primary-blue)', fontWeight: 600 }}>Target &lt;3.0 min</div>
         </div>
 
         <div className="kpi-card" style={{ borderTop: congestedLane ? '3px solid var(--alert-red)' : undefined }}>
@@ -130,7 +168,16 @@ export default function QueueIntelligence() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-          {lanes.map((lane, idx) => {
+          {lanes.map((laneData, idx) => {
+            const laneStatus = laneOverrides[laneData.id] || laneData.status;
+            const lane = { ...laneData, status: laneStatus };
+            if (laneStatus === 'STANDBY') {
+               lane.queue_depth = 0;
+               lane.estimated_wait = 0;
+            } else if (demoSimulateWait) {
+               lane.estimated_wait = simulatedWait;
+            }
+
             const isStandby = lane.status === 'STANDBY';
             const isCong = lane.status === 'CONGESTED';
             const isBal = lane.status === 'BALANCED';
@@ -156,14 +203,32 @@ export default function QueueIntelligence() {
                   </div>
                   <div>
                     <div style={{ fontSize: '0.7rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 700 }}>WAIT TIME</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isCong ? 'var(--alert-red)' : isStandby ? 'var(--text-muted)' : 'inherit' }}>{lane.estimated_wait} <span style={{ fontSize: '0.75rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isCong ? 'var(--alert-red)' : isStandby ? 'var(--text-muted)' : 'inherit' }}>{Number(lane.estimated_wait).toFixed(1)} <span style={{ fontSize: '0.75rem', color: isCong ? 'var(--alert-red)' : 'var(--text-secondary)', fontWeight: 600 }}>min</span></div>
                   </div>
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
                   <span>{isStandby ? 'Offline' : `⏱ ${lane.items_per_min} items/min`}</span>
                   <span>Cashier: {lane.cashier}</span>
                 </div>
-                {isCong && <button className="btn-danger" style={{ width: '100%', marginTop: '0.5rem' }}>Page Relief Cashier</button>}
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                  {isCong && <button className="btn-danger" style={{ flex: 1 }}>Page Relief Cashier</button>}
+                  <button 
+                    onClick={() => toggleLaneStatus(laneData.id, laneStatus)} 
+                    style={{ 
+                      flex: isCong ? undefined : 1,
+                      padding: '0.4rem', 
+                      borderRadius: '4px', 
+                      border: isStandby ? '1px solid var(--primary-blue)' : '1px solid var(--border-strong)', 
+                      background: isStandby ? 'transparent' : '#f1f5f9', 
+                      color: isStandby ? 'var(--primary-blue)' : 'var(--text-secondary)', 
+                      fontWeight: 600, 
+                      fontSize: '0.75rem', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    {isStandby ? 'Enable Bay' : 'Disable Bay'}
+                  </button>
+                </div>
               </div>
             );
           })}
